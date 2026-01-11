@@ -1,0 +1,31 @@
+name: viewer_tracker
+description: "Projeto flutter para visualizar modelos 3D"
+
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  webview_flutter: ^4.7.0
+  file_picker: ^8.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+  flutter_scene_importer: any
+
+flutter:
+
+  uses-material-design: true
+
+  assets:
+  - assets/Character_output.glb
+  - assets/index.html
