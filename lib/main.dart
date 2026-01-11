@@ -27,6 +27,9 @@ class _ThreeJSViewState extends State<ThreeJSView> {
 
   // Estados das Animações
   List<String> _animations = [];
+  bool _isPaused = false;
+  double _timeScale = 1.0;
+  String _currentAnimName = "";
 
   // Estados dos Sliders
   double _posX = 5.0;
@@ -44,7 +47,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
       ..loadFlutterAsset('assets/index.html');
   }
 
-  // Envia todos os estados atuais para o JavaScript
   void _updateJS() {
     _controller.runJavaScript("window.updateLightPosition($_posX, $_posY, $_posZ)");
     _controller.runJavaScript("window.updateLightIntensity($_intensity)");
@@ -58,15 +60,14 @@ class _ThreeJSViewState extends State<ThreeJSView> {
       final bytes = await File(result.files.single.path!).readAsBytes();
       await _controller.runJavaScript("window.loadModel('${base64Encode(bytes)}')");
 
-      // Aguarda o processamento do modelo para capturar as animações
       await Future.delayed(const Duration(milliseconds: 1000));
       final dynamic resultAnims = await _controller.runJavaScriptReturningResult("window.getAnimationList()");
 
       setState(() {
         _isModelLoaded = true;
         _isRigVisible = false;
+        _currentAnimName = ""; // Reset do nome ao carregar novo modelo
         try {
-          // Trata o retorno do JS que pode vir como string escapada
           String rawJson = resultAnims.toString();
           if (rawJson.startsWith('"') && rawJson.endsWith('"')) {
             rawJson = jsonDecode(rawJson);
@@ -104,6 +105,11 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                   leading: const Icon(Icons.movie, color: Colors.purpleAccent),
                   title: Text(_animations[i], style: const TextStyle(color: Colors.white)),
                   onTap: () {
+                    setState(() {
+                      _currentAnimName = _animations[i];
+                      _isPaused = false;
+                      _timeScale = 1.0;
+                    });
                     _controller.runJavaScript("window.playAnimation('${_animations[i]}')");
                     Navigator.pop(context);
                   },
@@ -137,26 +143,14 @@ class _ThreeJSViewState extends State<ThreeJSView> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.cloud_upload_outlined,
-                    size: 64,
-                    color: Colors.white.withAlpha(155),
-                  ),
+                  Icon(Icons.cloud_upload_outlined, size: 64, color: Colors.white.withAlpha(155)),
                   const SizedBox(height: 16),
-                  Text(
-                    "Nenhum modelo .glb carregado\nToque no canto superior direito da tela para carregar",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withAlpha(190),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w300,
-                    ),
-                  ),
+                  Text("Nenhum modelo .glb carregado", style: TextStyle(color: Colors.white.withAlpha(190), fontSize: 16)),
                 ],
               ),
             ),
 
-          // Painel de Controle Sticky
+          // Painel de Luzes
           if (_isModelLoaded)
             Positioned(
               right: 100,
@@ -166,6 +160,14 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                 duration: const Duration(milliseconds: 200),
                 child: _showControls ? _buildControlPanel() : const SizedBox(),
               ),
+            ),
+
+          // Painel de Reprodução
+          if (_isModelLoaded && _currentAnimName.isNotEmpty && !_showControls)
+            Positioned(
+              left: 20,
+              bottom: 34,
+              child: _buildPlaybackControls(),
             ),
         ],
       ),
@@ -183,7 +185,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             ),
             const SizedBox(height: 12),
           ],
-
           FloatingActionButton(
             mini: true,
             heroTag: "btnRig",
@@ -204,6 +205,51 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         ],
       )
           : null,
+    );
+  }
+
+  // Controles de Reprodução
+  Widget _buildPlaybackControls() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withAlpha(150),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause, color: Colors.white),
+            onPressed: () {
+              setState(() => _isPaused = !_isPaused);
+              _controller.runJavaScript(_isPaused ? "window.pauseAnimation()" : "window.resumeAnimation()");
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.replay, color: Colors.white, size: 20),
+            onPressed: () {
+              setState(() => _isPaused = false);
+              _controller.runJavaScript("window.resetAnimation()");
+            },
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.speed, color: Colors.white54, size: 16),
+          SizedBox(
+            width: 80,
+            child: Slider(
+              value: _timeScale,
+              min: 0.1,
+              max: 3.0,
+              onChanged: (v) {
+                setState(() => _timeScale = v);
+                _controller.runJavaScript("window.setAnimationSpeed($_timeScale)");
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -229,8 +275,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           _label("Intensidade", _intensity),
           _slider((v) => _intensity = v, 0, 10, _intensity),
           const SizedBox(height: 12),
-          const Text("Cor da Fonte", style: TextStyle(color: Colors.white70, fontSize: 12)),
-          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

@@ -25,7 +25,7 @@
 
     let scene, camera, renderer, controls, model, skeletonHelper; // Cena
     let hemiLight, dirLight; // Iluminação
-    let mixer, clock; // Animação
+    let mixer, clock, currentAction; // Animação
 
     function init() {
         clock = new THREE.Clock();
@@ -55,8 +55,6 @@
         animate();
     }
 
-    // --- INTERFACE COM FLUTTER ---
-
     window.loadModel = function(base64Data) {
         if (model) scene.remove(model);
         if (skeletonHelper) scene.remove(skeletonHelper);
@@ -75,7 +73,6 @@
             model = gltf.scene;
             scene.add(model);
 
-            // Setup de animações
             mixer = new THREE.AnimationMixer(model);
             window.modelAnimations = gltf.animations;
 
@@ -104,9 +101,17 @@
         const clip = THREE.AnimationClip.findByName(window.modelAnimations, name);
         if (clip) {
             mixer.stopAllAction();
-            mixer.clipAction(clip).play();
+            currentAction = mixer.clipAction(clip);
+            currentAction.play();
+            currentAction.paused = false;
+            currentAction.timeScale = 1;
         }
     };
+
+    window.pauseAnimation = function() { if (currentAction) currentAction.paused = true; };
+    window.resumeAnimation = function() { if (currentAction) currentAction.paused = false; };
+    window.resetAnimation = function() { if (currentAction) { currentAction.reset(); currentAction.play(); } };
+    window.setAnimationSpeed = function(speed) { if (currentAction) currentAction.timeScale = speed; };
 
     window.updateLightPosition = function(x, y, z) { dirLight.position.set(x, y, z); };
     window.updateLightIntensity = function(i) { dirLight.intensity = i; };
