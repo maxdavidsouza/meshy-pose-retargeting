@@ -85,14 +85,14 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                   Icon(
                     Icons.cloud_upload_outlined,
                     size: 64,
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withAlpha(155),
                   ),
                   const SizedBox(height: 16),
                   Text(
                     "Nenhum modelo .glb carregado\nToque no canto superior direito da tela para carregar",
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withAlpha(190),
                       fontSize: 16,
                       fontWeight: FontWeight.w300,
                     ),
