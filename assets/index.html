@@ -95,7 +95,7 @@
             const size = box.getSize(new THREE.Vector3()).length();
 
             controls.target.copy(center);
-            camera.position.set(center.x, center.y + size/2, center.z + size);
+            camera.position.set(center.x, center.y + size, center.z + size * 4.2);
             controls.update();
             URL.revokeObjectURL(url);
         });

@@ -77,11 +77,35 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         children: [
           WebViewWidget(controller: _controller),
 
+          if (!_isModelLoaded)
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.cloud_upload_outlined,
+                    size: 64,
+                    color: Colors.white.withOpacity(0.5),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Nenhum modelo .glb carregado\nToque no canto superior direito da tela para carregar",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w300,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Painel de Controle Sticky
           if (_isModelLoaded)
             Positioned(
-              right: 16,
-              bottom: 90,
+              right: 100,
+              bottom: 34,
               child: AnimatedOpacity(
                 opacity: _showControls ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 200),
@@ -120,7 +144,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
       width: 260,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.85),
+        color: Colors.black.withAlpha(127),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white10),
       ),
