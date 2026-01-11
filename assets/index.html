@@ -23,10 +23,12 @@
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    let scene, camera, renderer, controls, model, skeletonHelper;
-    let hemiLight, dirLight;
+    let scene, camera, renderer, controls, model, skeletonHelper; // Cena
+    let hemiLight, dirLight; // Iluminação
+    let mixer, clock; // Animação
 
     function init() {
+        clock = new THREE.Clock();
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x222222);
 
@@ -39,11 +41,9 @@
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         document.body.appendChild(renderer.domElement);
 
-        // Luz Ambiente Suave
         hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.5);
         scene.add(hemiLight);
 
-        // Luz Direcional (Controlada pelo Flutter)
         dirLight = new THREE.DirectionalLight(0xffffff, 2);
         dirLight.position.set(5, 5, 5);
         scene.add(dirLight);
@@ -57,21 +57,10 @@
 
     // --- INTERFACE COM FLUTTER ---
 
-    window.updateLightPosition = function(x, y, z) {
-        dirLight.position.set(x, y, z);
-    };
-
-    window.updateLightIntensity = function(intensity) {
-        dirLight.intensity = intensity;
-    };
-
-    window.updateLightColor = function(hexColor) {
-        dirLight.color.set(hexColor);
-    };
-
     window.loadModel = function(base64Data) {
         if (model) scene.remove(model);
         if (skeletonHelper) scene.remove(skeletonHelper);
+        if (mixer) mixer.stopAllAction();
 
         const loader = new GLTFLoader();
         const binaryData = atob(base64Data);
@@ -85,6 +74,10 @@
         loader.load(url, (gltf) => {
             model = gltf.scene;
             scene.add(model);
+
+            // Setup de animações
+            mixer = new THREE.AnimationMixer(model);
+            window.modelAnimations = gltf.animations;
 
             skeletonHelper = new THREE.SkeletonHelper(model);
             skeletonHelper.visible = false;
@@ -101,12 +94,28 @@
         });
     };
 
+    window.getAnimationList = function() {
+        if (!window.modelAnimations || window.modelAnimations.length === 0) return JSON.stringify([]);
+        return JSON.stringify(window.modelAnimations.map(a => a.name));
+    };
+
+    window.playAnimation = function(name) {
+        if (!mixer || !window.modelAnimations) return;
+        const clip = THREE.AnimationClip.findByName(window.modelAnimations, name);
+        if (clip) {
+            mixer.stopAllAction();
+            mixer.clipAction(clip).play();
+        }
+    };
+
+    window.updateLightPosition = function(x, y, z) { dirLight.position.set(x, y, z); };
+    window.updateLightIntensity = function(i) { dirLight.intensity = i; };
+    window.updateLightColor = function(c) { dirLight.color.set(c); };
+
     window.toggleRig = function(show) {
         if (skeletonHelper) {
             skeletonHelper.visible = show;
-            model.traverse((child) => {
-                if (child.isMesh) child.visible = !show;
-            });
+            model.traverse((child) => { if (child.isMesh) child.visible = !show; });
         }
     };
 
@@ -118,6 +127,8 @@
 
     function animate() {
         requestAnimationFrame(animate);
+        const delta = clock.getDelta();
+        if (mixer) mixer.update(delta);
         controls.update();
         renderer.render(scene, camera);
     }

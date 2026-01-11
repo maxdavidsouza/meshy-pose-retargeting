@@ -25,6 +25,9 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   bool _showControls = false;
   bool _isRigVisible = false;
 
+  // Estados das Animações
+  List<String> _animations = [];
+
   // Estados dos Sliders
   double _posX = 5.0;
   double _posY = 5.0;
@@ -54,11 +57,63 @@ class _ThreeJSViewState extends State<ThreeJSView> {
     if (result != null && result.files.single.path != null) {
       final bytes = await File(result.files.single.path!).readAsBytes();
       await _controller.runJavaScript("window.loadModel('${base64Encode(bytes)}')");
+
+      // Aguarda o processamento do modelo para capturar as animações
+      await Future.delayed(const Duration(milliseconds: 1000));
+      final dynamic resultAnims = await _controller.runJavaScriptReturningResult("window.getAnimationList()");
+
       setState(() {
         _isModelLoaded = true;
         _isRigVisible = false;
+        try {
+          // Trata o retorno do JS que pode vir como string escapada
+          String rawJson = resultAnims.toString();
+          if (rawJson.startsWith('"') && rawJson.endsWith('"')) {
+            rawJson = jsonDecode(rawJson);
+          }
+          _animations = List<String>.from(jsonDecode(rawJson));
+        } catch (e) {
+          _animations = [];
+        }
       });
     }
+  }
+
+  void _showAnimationMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black.withAlpha(220),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Animações", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            const Divider(color: Colors.white24),
+            if (_animations.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(20),
+                child: Text("Nenhuma animação encontrada", style: TextStyle(color: Colors.white54)),
+              ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _animations.length,
+                itemBuilder: (context, i) => ListTile(
+                  leading: const Icon(Icons.movie, color: Colors.purpleAccent),
+                  title: Text(_animations[i], style: const TextStyle(color: Colors.white)),
+                  onTap: () {
+                    _controller.runJavaScript("window.playAnimation('${_animations[i]}')");
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -66,7 +121,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
     return Scaffold(
       backgroundColor: const Color(0xFF222222),
       appBar: AppBar(
-        title: const Text("Three.js Light Lab"),
+        title: const Text("Visualizador 3D"),
         backgroundColor: Colors.black87,
         foregroundColor: Colors.white,
         actions: [
@@ -118,8 +173,20 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           ? Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (_animations.isNotEmpty) ...[
+            FloatingActionButton(
+              mini: true,
+              heroTag: "btnAnim",
+              backgroundColor: Colors.purple,
+              onPressed: _showAnimationMenu,
+              child: const Icon(Icons.play_arrow, color: Colors.white),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           FloatingActionButton(
             mini: true,
+            heroTag: "btnRig",
             backgroundColor: Colors.orange,
             onPressed: () {
               setState(() => _isRigVisible = !_isRigVisible);
@@ -129,6 +196,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           ),
           const SizedBox(height: 12),
           FloatingActionButton(
+            heroTag: "btnLight",
             backgroundColor: _showControls ? Colors.redAccent : Colors.blueAccent,
             onPressed: () => setState(() => _showControls = !_showControls),
             child: Icon(_showControls ? Icons.close : Icons.lightbulb),
