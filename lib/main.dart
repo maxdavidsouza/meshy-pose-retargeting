@@ -31,7 +31,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   double _timeScale = 1.0;
   String _currentAnimName = "";
 
-  // Estados das Estatísticas (Novos)
+  // Estados das Estatísticas
   int _vertexCount = 0;
   int _faceCount = 0;
 
@@ -41,6 +41,9 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   double _posZ = 5.0;
   double _intensity = 2.0;
   Color _selectedColor = Colors.white;
+
+  // Estado da Lista de Ossos (Rig)
+  List<dynamic> _boneList = [];
 
   @override
   void initState() {
@@ -64,7 +67,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
       final bytes = await File(result.files.single.path!).readAsBytes();
       await _controller.runJavaScript("window.loadModel('${base64Encode(bytes)}')");
 
-      // Aguarda o Three.js processar a geometria antes de pedir as stats
       await Future.delayed(const Duration(milliseconds: 1200));
 
       final dynamic resultAnims = await _controller.runJavaScriptReturningResult("window.getAnimationList()");
@@ -75,7 +77,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         _isRigVisible = false;
         _currentAnimName = "";
 
-        // Parse das Estatísticas
         try {
           var stats = jsonDecode(resultStats.toString());
           if (stats is String) stats = jsonDecode(stats);
@@ -86,7 +87,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           _faceCount = 0;
         }
 
-        // Parse das Animações
         try {
           String rawJson = resultAnims.toString();
           if (rawJson.startsWith('"') && rawJson.endsWith('"')) {
@@ -98,6 +98,71 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         }
       });
     }
+  }
+
+  // Hierarquia de Ossos do Rig
+  Future<void> _showBoneInfo() async {
+    final dynamic resultBones = await _controller.runJavaScriptReturningResult("window.getBoneList()");
+
+    setState(() {
+      try {
+        String rawJson = resultBones.toString();
+        if (rawJson.startsWith('"') && rawJson.endsWith('"')) {
+          rawJson = jsonDecode(rawJson);
+        }
+        _boneList = jsonDecode(rawJson);
+      } catch (e) {
+        _boneList = [];
+      }
+    });
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF333333),
+        title: const Text("Estrutura Hierárquica", style: TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: _boneList.isEmpty
+              ? const Text("Nenhum osso encontrado.", style: TextStyle(color: Colors.white70))
+              : ListView.builder(
+            shrinkWrap: true,
+            itemCount: _boneList.length,
+            itemBuilder: (context, i) {
+              final bone = _boneList[i];
+              final String? parentName = bone['parent'];
+              final bool isChild = parentName != null;
+
+              return Padding(
+                padding: EdgeInsets.only(left: isChild ? 24.0 : 0.0),
+                child: ListTile(
+                  dense: true,
+                  visualDensity: VisualDensity.compact,
+                  leading: Icon(
+                    isChild ? Icons.subdirectory_arrow_right : Icons.hub,
+                    color: isChild ? Colors.orangeAccent : Colors.cyanAccent,
+                    size: 18,
+                  ),
+                  title: Text(
+                    bone['name'],
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    isChild ? "Pai: $parentName (ID: ${bone['uuid']})" : "Raiz (ID: ${bone['uuid']})",
+                    style: TextStyle(color: isChild ? Colors.white38 : Colors.cyanAccent.withAlpha(150), fontSize: 10),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Fechar"))
+        ],
+      ),
+    );
   }
 
   void _showAnimationMenu() {
@@ -142,7 +207,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
     );
   }
 
-  // Widget das Estatísticas (Canto Superior Esquerdo)
   Widget _buildStatsPanel() {
     return Container(
       margin: const EdgeInsets.all(12),
@@ -175,7 +239,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
     );
   }
 
-  // Controles de Reprodução de Animação
   Widget _buildPlaybackControls() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -220,7 +283,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
     );
   }
 
-  // Painel de Controle de Luzes
   Widget _buildControlPanel() {
     return Container(
       width: 260,
@@ -318,6 +380,19 @@ class _ThreeJSViewState extends State<ThreeJSView> {
               top: 0,
               left: 0,
               child: _buildStatsPanel(),
+            ),
+
+          // Botão Informativo (Rig/Hierarquia)
+          if (_isModelLoaded)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: FloatingActionButton.small(
+                heroTag: "btnInfo",
+                backgroundColor: Colors.black54,
+                onPressed: _showBoneInfo,
+                child: const Icon(Icons.info_outline, color: Colors.white),
+              ),
             ),
 
           if (!_isModelLoaded)

@@ -117,6 +117,21 @@
         });
     };
 
+    window.getBoneList = function() {
+        if (!model) return JSON.stringify([]);
+        const bones = [];
+        model.traverse((child) => {
+            if (child.isBone) {
+                bones.push({
+                    name: child.name,
+                    uuid: child.uuid.substring(0, 8),
+                    parent: (child.parent && child.parent.isBone) ? child.parent.name : null
+                });
+            }
+        });
+        return JSON.stringify(bones);
+    };
+
     window.getAnimationList = function() {
         if (!window.modelAnimations || window.modelAnimations.length === 0) return JSON.stringify([]);
         return JSON.stringify(window.modelAnimations.map(a => a.name));
