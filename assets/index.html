@@ -22,10 +22,11 @@
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
-    let scene, camera, renderer, controls, model, skeletonHelper; // Cena
-    let hemiLight, dirLight; // Iluminação
-    let mixer, clock, currentAction; // Animação
+    let scene, camera, renderer, controls, model, skeletonHelper;
+    let hemiLight, dirLight;
+    let mixer, clock, currentAction;
 
     function init() {
         clock = new THREE.Clock();
@@ -91,30 +92,47 @@
         });
     };
 
+    window.removeAnimation = function(name) {
+        if (!window.modelAnimations) return JSON.stringify([]);
+        window.modelAnimations = window.modelAnimations.filter(a => a.name !== name);
+        if (currentAction && currentAction.getClip().name === name) {
+            mixer.stopAllAction();
+            currentAction = null;
+        }
+        return JSON.stringify(window.modelAnimations.map(a => a.name));
+    };
+
+    window.exportGLB = function() {
+        if (!model) return;
+        const exporter = new GLTFExporter();
+        const options = { binary: true, animations: window.modelAnimations };
+
+        exporter.parse(model, function (result) {
+            const blob = new Blob([result], { type: 'application/octet-stream' });
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = function() {
+                const base64data = reader.result.split(',')[1];
+                // Envia para o canal 'FileHandler' do Flutter
+                if (window.FileHandler) {
+                    window.FileHandler.postMessage(base64data);
+                }
+            }
+        }, function(error) { console.error(error); }, options);
+    };
+
     window.getModelStats = function() {
         if (!model) return JSON.stringify({ vertices: 0, faces: 0 });
-
-        let vertices = 0;
-        let faces = 0;
-
+        let vertices = 0; let faces = 0;
         model.traverse((child) => {
             if (child.isMesh) {
                 const geometry = child.geometry;
-                if (geometry.attributes.position) {
-                    vertices += geometry.attributes.position.count;
-                }
-                if (geometry.index) {
-                    faces += geometry.index.count / 3;
-                } else if (geometry.attributes.position) {
-                    faces += geometry.attributes.position.count / 3;
-                }
+                if (geometry.attributes.position) vertices += geometry.attributes.position.count;
+                if (geometry.index) faces += geometry.index.count / 3;
+                else if (geometry.attributes.position) faces += geometry.attributes.position.count / 3;
             }
         });
-
-        return JSON.stringify({
-            vertices: Math.round(vertices),
-            faces: Math.round(faces)
-        });
+        return JSON.stringify({ vertices: Math.round(vertices), faces: Math.round(faces) });
     };
 
     window.getBoneList = function() {
@@ -153,7 +171,6 @@
     window.resumeAnimation = function() { if (currentAction) currentAction.paused = false; };
     window.resetAnimation = function() { if (currentAction) { currentAction.reset(); currentAction.play(); } };
     window.setAnimationSpeed = function(speed) { if (currentAction) currentAction.timeScale = speed; };
-
     window.updateLightPosition = function(x, y, z) { dirLight.position.set(x, y, z); };
     window.updateLightIntensity = function(i) { dirLight.intensity = i; };
     window.updateLightColor = function(c) { dirLight.color.set(c); };
