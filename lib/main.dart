@@ -1,8 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:vector_math/vector_math_64.dart' as v64;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,6 +44,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   Color _selectedColor = Colors.white;
 
   List<dynamic> _boneList = [];
+  final poseDetector = PoseDetector(options: PoseDetectorOptions(model: PoseDetectionModel.accurate));
 
   @override
   void initState() {
@@ -52,6 +57,100 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         onMessageReceived: (message) => _saveModel(message.message),
       )
       ..loadFlutterAsset('assets/index.html');
+  }
+
+  List<double> _getBoneRotation(PoseLandmark start, PoseLandmark end, v64.Vector3 baseDir) {
+    v64.Vector3 detectedDir = v64.Vector3(
+      end.x - start.x,
+      -(end.y - start.y),
+      end.z - start.z,
+    ).normalized();
+    v64.Quaternion q = v64.Quaternion.fromTwoVectors(baseDir, detectedDir);
+    return [q.x, q.y, q.z, q.w];
+  }
+
+  Future<void> _processVideoForPose() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.video);
+    if (result == null) return;
+
+    _showLoadingDialog("Processando movimentos com IA...");
+
+    try {
+      final String videoPath = result.files.single.path!;
+      final dir = await getTemporaryDirectory();
+      final outPath = "${dir.path}/mocap_frames";
+      if (Directory(outPath).existsSync()) Directory(outPath).deleteSync(recursive: true);
+      await Directory(outPath).create(recursive: true);
+
+      await FFmpegKit.execute('-i "$videoPath" -r 10 -q:v 2 "$outPath/f%03d.jpg"');
+      List<FileSystemEntity> frames = Directory(outPath).listSync().toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+
+      List<Map<String, dynamic>> timeline = [];
+      double currentTime = 0.0;
+
+      for (var frame in frames) {
+        final poses = await poseDetector.processImage(InputImage.fromFilePath(frame.path));
+        if (poses.isNotEmpty) {
+          final p = poses.first;
+          Map<String, List<double>> rots = {};
+
+          // Mapeamento usando sua hierarquia de ossos
+          rots['RightArm'] = _getBoneRotation(p.landmarks[PoseLandmarkType.rightShoulder]!, p.landmarks[PoseLandmarkType.rightElbow]!, v64.Vector3(1, 0, 0));
+          rots['RightForeArm'] = _getBoneRotation(p.landmarks[PoseLandmarkType.rightElbow]!, p.landmarks[PoseLandmarkType.rightWrist]!, v64.Vector3(1, 0, 0));
+          rots['LeftArm'] = _getBoneRotation(p.landmarks[PoseLandmarkType.leftShoulder]!, p.landmarks[PoseLandmarkType.leftElbow]!, v64.Vector3(-1, 0, 0));
+          rots['LeftForeArm'] = _getBoneRotation(p.landmarks[PoseLandmarkType.leftElbow]!, p.landmarks[PoseLandmarkType.leftWrist]!, v64.Vector3(-1, 0, 0));
+          rots['RightUpLeg'] = _getBoneRotation(p.landmarks[PoseLandmarkType.rightHip]!, p.landmarks[PoseLandmarkType.rightKnee]!, v64.Vector3(0, -1, 0));
+          rots['LeftUpLeg'] = _getBoneRotation(p.landmarks[PoseLandmarkType.leftHip]!, p.landmarks[PoseLandmarkType.leftKnee]!, v64.Vector3(0, -1, 0));
+
+          timeline.add({"time": currentTime, "rotations": rots});
+        }
+        currentTime += 0.1;
+      }
+
+      final animResult = await _controller.runJavaScriptReturningResult(
+          "window.addNewAnimationFromPose('Mocap_${DateTime.now().millisecond}', '${jsonEncode(timeline)}')"
+      );
+
+      _handleAnimationListResult(animResult);
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Nova animação adicionada com sucesso!")));
+    } catch (e) {
+      Navigator.pop(context);
+      print("Erro: $e");
+    }
+  }
+
+  void _handleAnimationListResult(dynamic result) {
+    try {
+      String rawJson = result.toString();
+      if (rawJson.startsWith('"') && rawJson.endsWith('"')) {
+        rawJson = jsonDecode(rawJson);
+      }
+      setState(() {
+        _animations = List<String>.from(jsonDecode(rawJson));
+      });
+    } catch (e) {
+      print("Erro ao atualizar lista: $e");
+    }
+  }
+
+  void _showLoadingDialog(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF333333),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: Colors.cyanAccent),
+            const SizedBox(height: 20),
+            Text(message, style: const TextStyle(color: Colors.white)),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _saveModel(String base64Content) async {
@@ -101,15 +200,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           _faceCount = 0;
         }
 
-        try {
-          String rawJson = resultAnims.toString();
-          if (rawJson.startsWith('"') && rawJson.endsWith('"')) {
-            rawJson = jsonDecode(rawJson);
-          }
-          _animations = List<String>.from(jsonDecode(rawJson));
-        } catch (e) {
-          _animations = [];
-        }
+        _handleAnimationListResult(resultAnims);
       });
     }
   }
@@ -192,11 +283,8 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                           icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                           onPressed: () async {
                             final result = await _controller.runJavaScriptReturningResult("window.removeAnimation('${_animations[i]}')");
-                            String raw = result.toString();
-                            if (raw.startsWith('"')) raw = jsonDecode(raw);
-                            final newList = List<String>.from(jsonDecode(raw));
-                            setModalState(() => _animations = newList);
-                            setState(() => _animations = newList);
+                            _handleAnimationListResult(result);
+                            setModalState(() {});
                           },
                         ),
                         onTap: () {
@@ -211,6 +299,23 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                       ),
                     ),
                   ),
+                  const Divider(color: Colors.white24),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.indigo,
+                          minimumSize: const Size(double.infinity, 48),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _processVideoForPose();
+                      },
+                      icon: const Icon(Icons.video_camera_back, color: Colors.white),
+                      label: const Text("Adicionar via Vídeo (.mp4)", style: TextStyle(color: Colors.white)),
+                    ),
+                  )
                 ],
               ),
             );
@@ -254,7 +359,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             _controller.runJavaScript("window.resetAnimation()");
           }),
           const Icon(Icons.speed, color: Colors.white54, size: 16),
-          SizedBox(width: 80, child: Slider(value: _timeScale, min: 0.1, max: 3.0, onChanged: (v) {
+          SizedBox(width: 80, child: Slider(value: _timeScale, min: 0.1, max: 3.0, activeColor: Colors.purpleAccent, onChanged: (v) {
             setState(() => _timeScale = v);
             _controller.runJavaScript("window.setAnimationSpeed($_timeScale)");
           })),
@@ -284,7 +389,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   }
 
   Widget _label(String t, double v) => Text("$t: ${v.toStringAsFixed(1)}", style: const TextStyle(color: Colors.white, fontSize: 11));
-  Widget _slider(Function(double) f, double min, double max, double c) => SizedBox(height: 35, child: Slider(value: c, min: min, max: max, onChanged: (v) { setState(() => f(v)); _updateJS(); }));
+  Widget _slider(Function(double) f, double min, double max, double c) => SizedBox(height: 35, child: Slider(value: c, min: min, max: max, activeColor: Colors.blueAccent, onChanged: (v) { setState(() => f(v)); _updateJS(); }));
   Widget _colorBtn(Color c) => GestureDetector(onTap: () { setState(() => _selectedColor = c); _updateJS(); }, child: Container(width: 35, height: 35, decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: _selectedColor == c ? Colors.white : Colors.transparent, width: 2))));
 
   @override
@@ -302,7 +407,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           WebViewWidget(controller: _controller),
           if (_isModelLoaded) Positioned(top: 0, left: 0, child: _buildStatsPanel()),
 
-          // Botões Superiores Direitos
           if (_isModelLoaded)
             Positioned(
               top: 12, right: 12,
