@@ -91,6 +91,32 @@
         });
     };
 
+    window.getModelStats = function() {
+        if (!model) return JSON.stringify({ vertices: 0, faces: 0 });
+
+        let vertices = 0;
+        let faces = 0;
+
+        model.traverse((child) => {
+            if (child.isMesh) {
+                const geometry = child.geometry;
+                if (geometry.attributes.position) {
+                    vertices += geometry.attributes.position.count;
+                }
+                if (geometry.index) {
+                    faces += geometry.index.count / 3;
+                } else if (geometry.attributes.position) {
+                    faces += geometry.attributes.position.count / 3;
+                }
+            }
+        });
+
+        return JSON.stringify({
+            vertices: Math.round(vertices),
+            faces: Math.round(faces)
+        });
+    };
+
     window.getAnimationList = function() {
         if (!window.modelAnimations || window.modelAnimations.length === 0) return JSON.stringify([]);
         return JSON.stringify(window.modelAnimations.map(a => a.name));

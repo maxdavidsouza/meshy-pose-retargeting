@@ -31,7 +31,11 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   double _timeScale = 1.0;
   String _currentAnimName = "";
 
-  // Estados dos Sliders
+  // Estados das Estatísticas (Novos)
+  int _vertexCount = 0;
+  int _faceCount = 0;
+
+  // Estados dos Sliders de Luz
   double _posX = 5.0;
   double _posY = 5.0;
   double _posZ = 5.0;
@@ -60,13 +64,29 @@ class _ThreeJSViewState extends State<ThreeJSView> {
       final bytes = await File(result.files.single.path!).readAsBytes();
       await _controller.runJavaScript("window.loadModel('${base64Encode(bytes)}')");
 
-      await Future.delayed(const Duration(milliseconds: 1000));
+      // Aguarda o Three.js processar a geometria antes de pedir as stats
+      await Future.delayed(const Duration(milliseconds: 1200));
+
       final dynamic resultAnims = await _controller.runJavaScriptReturningResult("window.getAnimationList()");
+      final dynamic resultStats = await _controller.runJavaScriptReturningResult("window.getModelStats()");
 
       setState(() {
         _isModelLoaded = true;
         _isRigVisible = false;
-        _currentAnimName = ""; // Reset do nome ao carregar novo modelo
+        _currentAnimName = "";
+
+        // Parse das Estatísticas
+        try {
+          var stats = jsonDecode(resultStats.toString());
+          if (stats is String) stats = jsonDecode(stats);
+          _vertexCount = stats['vertices'] ?? 0;
+          _faceCount = stats['faces'] ?? 0;
+        } catch (e) {
+          _vertexCount = 0;
+          _faceCount = 0;
+        }
+
+        // Parse das Animações
         try {
           String rawJson = resultAnims.toString();
           if (rawJson.startsWith('"') && rawJson.endsWith('"')) {
@@ -122,6 +142,160 @@ class _ThreeJSViewState extends State<ThreeJSView> {
     );
   }
 
+  // Widget das Estatísticas (Canto Superior Esquerdo)
+  Widget _buildStatsPanel() {
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withAlpha(180),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _statsRow(Icons.interests, "Vértices: $_vertexCount"),
+          const SizedBox(height: 4),
+          _statsRow(Icons.polyline, "Planos: $_faceCount"),
+        ],
+      ),
+    );
+  }
+
+  Widget _statsRow(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: Colors.cyanAccent, size: 14),
+        const SizedBox(width: 8),
+        Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+
+  // Controles de Reprodução de Animação
+  Widget _buildPlaybackControls() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withAlpha(150),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause, color: Colors.white),
+            onPressed: () {
+              setState(() => _isPaused = !_isPaused);
+              _controller.runJavaScript(_isPaused ? "window.pauseAnimation()" : "window.resumeAnimation()");
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.replay, color: Colors.white, size: 20),
+            onPressed: () {
+              setState(() => _isPaused = false);
+              _controller.runJavaScript("window.resetAnimation()");
+            },
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.speed, color: Colors.white54, size: 16),
+          SizedBox(
+            width: 80,
+            child: Slider(
+              value: _timeScale,
+              min: 0.1,
+              max: 3.0,
+              onChanged: (v) {
+                setState(() => _timeScale = v);
+                _controller.runJavaScript("window.setAnimationSpeed($_timeScale)");
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Painel de Controle de Luzes
+  Widget _buildControlPanel() {
+    return Container(
+      width: 260,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withAlpha(180),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _label("Luz Pos X", _posX),
+          _slider((v) => _posX = v, -15, 15, _posX),
+          _label("Luz Pos Y", _posY),
+          _slider((v) => _posY = v, 0, 20, _posY),
+          _label("Luz Pos Z", _posZ),
+          _slider((v) => _posZ = v, -15, 15, _posZ),
+          _label("Intensidade", _intensity),
+          _slider((v) => _intensity = v, 0, 10, _intensity),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _colorBtn(Colors.white),
+              _colorBtn(Colors.amber),
+              _colorBtn(Colors.lightBlue),
+              _colorBtn(Colors.redAccent),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _label(String text, double val) => Text("$text: ${val.toStringAsFixed(1)}",
+      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold));
+
+  Widget _slider(Function(double) onChange, double min, double max, double current) {
+    return SizedBox(
+      height: 35,
+      child: Slider(
+        value: current,
+        min: min,
+        max: max,
+        onChanged: (v) {
+          setState(() => onChange(v));
+          _updateJS();
+        },
+      ),
+    );
+  }
+
+  Widget _colorBtn(Color color) {
+    return GestureDetector(
+      onTap: () {
+        setState(() => _selectedColor = color);
+        _updateJS();
+      },
+      child: Container(
+        width: 35,
+        height: 35,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: _selectedColor == color ? Colors.white : Colors.transparent,
+            width: 2,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -137,6 +311,14 @@ class _ThreeJSViewState extends State<ThreeJSView> {
       body: Stack(
         children: [
           WebViewWidget(controller: _controller),
+
+          // Painel de Estatísticas
+          if (_isModelLoaded)
+            Positioned(
+              top: 0,
+              left: 0,
+              child: _buildStatsPanel(),
+            ),
 
           if (!_isModelLoaded)
             Center(
@@ -205,126 +387,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         ],
       )
           : null,
-    );
-  }
-
-  // Controles de Reprodução
-  Widget _buildPlaybackControls() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.black.withAlpha(150),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause, color: Colors.white),
-            onPressed: () {
-              setState(() => _isPaused = !_isPaused);
-              _controller.runJavaScript(_isPaused ? "window.pauseAnimation()" : "window.resumeAnimation()");
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.replay, color: Colors.white, size: 20),
-            onPressed: () {
-              setState(() => _isPaused = false);
-              _controller.runJavaScript("window.resetAnimation()");
-            },
-          ),
-          const SizedBox(width: 8),
-          const Icon(Icons.speed, color: Colors.white54, size: 16),
-          SizedBox(
-            width: 80,
-            child: Slider(
-              value: _timeScale,
-              min: 0.1,
-              max: 3.0,
-              onChanged: (v) {
-                setState(() => _timeScale = v);
-                _controller.runJavaScript("window.setAnimationSpeed($_timeScale)");
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildControlPanel() {
-    return Container(
-      width: 260,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.black.withAlpha(127),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _label("Luz Pos X", _posX),
-          _slider((v) => _posX = v, -15, 15, _posX),
-          _label("Luz Pos Y", _posY),
-          _slider((v) => _posY = v, 0, 20, _posY),
-          _label("Luz Pos Z", _posZ),
-          _slider((v) => _posZ = v, -15, 15, _posZ),
-          _label("Intensidade", _intensity),
-          _slider((v) => _intensity = v, 0, 10, _intensity),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _colorBtn(Colors.white),
-              _colorBtn(Colors.amber),
-              _colorBtn(Colors.lightBlue),
-              _colorBtn(Colors.redAccent),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _label(String text, double val) => Text("$text: ${val.toStringAsFixed(1)}",
-      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold));
-
-  Widget _slider(Function(double) onChange, double min, double max, double current) {
-    return SizedBox(
-      height: 35,
-      child: Slider(
-        value: current,
-        min: min,
-        max: max,
-        onChanged: (v) {
-          setState(() => onChange(v));
-          _updateJS();
-        },
-      ),
-    );
-  }
-
-  Widget _colorBtn(Color color) {
-    return GestureDetector(
-      onTap: () {
-        setState(() => _selectedColor = color);
-        _updateJS();
-      },
-      child: Container(
-        width: 35,
-        height: 35,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: _selectedColor == color ? Colors.white : Colors.transparent,
-            width: 2,
-          ),
-        ),
-      ),
     );
   }
 }
