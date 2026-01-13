@@ -47,6 +47,20 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   final poseDetector = PoseDetector(options: PoseDetectorOptions(model: PoseDetectionModel.accurate));
 
   Map<String, v64.Vector3> _tPoseVectors = {};
+  Map<String, v64.Vector3> _lastVectors = {};
+  double _zImpact = 0.5;
+  double _smoothing = 0.25;
+
+  v64.Vector3 _smoothVector(String boneName, v64.Vector3 newDir) {
+    if (!_lastVectors.containsKey(boneName)) {
+      _lastVectors[boneName] = newDir;
+      return newDir;
+    }
+    // Interpolação Linear de Movimentos (Menor = mais suave, Maior = mais abrupto).
+    v64.Vector3 smoothed = _lastVectors[boneName]! + (newDir - _lastVectors[boneName]!) * _smoothing;
+    _lastVectors[boneName] = smoothed.normalized();
+    return _lastVectors[boneName]!;
+  }
 
   Future<void> _fetchTPoseReferences() async {
     final result = await _controller.runJavaScriptReturningResult("window.getTPoseReferences()");
@@ -79,13 +93,14 @@ class _ThreeJSViewState extends State<ThreeJSView> {
       ..loadFlutterAsset('assets/index.html');
   }
 
-  List<double> _getBoneRotation(PoseLandmark start, PoseLandmark end, v64.Vector3 baseDir) {
+  List<double> _getBoneRotation(String boneName, PoseLandmark start, PoseLandmark end, v64.Vector3 baseDir) {
     v64.Vector3 detectedDir = v64.Vector3(
       end.x - start.x,
       end.y - start.y,
-      -(end.z - start.z),
+      -(end.z - start.z) * _zImpact,
     ).normalized();
-    v64.Quaternion q = v64.Quaternion.fromTwoVectors(baseDir, detectedDir);
+    v64.Vector3 smoothedDir = _smoothVector(boneName, detectedDir.normalized());
+    v64.Quaternion q = v64.Quaternion.fromTwoVectors(baseDir, smoothedDir);
     return [q.x, q.y, q.z, q.w];
   }
 
@@ -117,6 +132,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
 
           if (_tPoseVectors.containsKey('RightArm')) {
             rots['RightArm'] = _getBoneRotation(
+                'RightArm',
                 p.landmarks[PoseLandmarkType.rightShoulder]!,
                 p.landmarks[PoseLandmarkType.rightElbow]!,
                 _tPoseVectors['RightArm']!
@@ -125,6 +141,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
 
           if (_tPoseVectors.containsKey('RightForeArm')) {
             rots['RightForeArm'] = _getBoneRotation(
+                'RightForeArm',
                 p.landmarks[PoseLandmarkType.rightElbow]!,
                 p.landmarks[PoseLandmarkType.rightWrist]!,
                 _tPoseVectors['RightForeArm']!
@@ -133,6 +150,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
 
           if (_tPoseVectors.containsKey('LeftArm')) {
             rots['LeftArm'] = _getBoneRotation(
+                'LeftArm',
                 p.landmarks[PoseLandmarkType.leftShoulder]!,
                 p.landmarks[PoseLandmarkType.leftElbow]!,
                 _tPoseVectors['LeftArm']!
@@ -141,6 +159,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
 
           if (_tPoseVectors.containsKey('LeftForeArm')) {
             rots['LeftForeArm'] = _getBoneRotation(
+                'LeftForeArm',
                 p.landmarks[PoseLandmarkType.leftElbow]!,
                 p.landmarks[PoseLandmarkType.leftWrist]!,
                 _tPoseVectors['LeftForeArm']!
@@ -214,13 +233,18 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   void _updateJS() {
     _controller.runJavaScript("window.updateLightPosition($_posX, $_posY, $_posZ)");
     _controller.runJavaScript("window.updateLightIntensity($_intensity)");
-    String hex = '#${_selectedColor.value.toRadixString(16).substring(2)}';
+    String hex = '#${_selectedColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
     _controller.runJavaScript("window.updateLightColor('$hex')");
   }
 
   Future<void> _pickAndLoadModel() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles();
     if (result != null && result.files.single.path != null) {
+      setState(() {
+        _animations = [];
+        _isModelLoaded = false;
+      });
+
       final bytes = await File(result.files.single.path!).readAsBytes();
       await _controller.runJavaScript("window.loadModel('${base64Encode(bytes)}')");
 
@@ -346,6 +370,29 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                     ),
                   ),
                   const Divider(color: Colors.white24),
+                  _buildMocapSlider(
+                    label: "Fator de Profundidade da Câmera: ${_zImpact.toStringAsFixed(2)}",
+                    value: _zImpact,
+                    min: 0.0,
+                    max: 2.0,
+                    color: Colors.cyanAccent,
+                    onChanged: (v) {
+                      setModalState(() => _zImpact = v);
+                      setState(() => _zImpact = v);
+                    },
+                  ),
+                  _buildMocapSlider(
+                    label: "Suavização de Movimento dos Membros: ${_smoothing.toStringAsFixed(2)}",
+                    value: _smoothing,
+                    min: 0.01,
+                    max: 1.0,
+                    color: Colors.greenAccent,
+                    onChanged: (v) {
+                      setModalState(() => _smoothing = v);
+                      setState(() => _smoothing = v);
+                    },
+                  ),
+                  const SizedBox(height: 10),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: ElevatedButton.icon(
@@ -367,6 +414,33 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             );
           }
       ),
+    );
+  }
+
+  Widget _buildMocapSlider({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required Color color,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        SizedBox(
+          height: 30,
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            activeColor: color,
+            inactiveColor: Colors.white10,
+            onChanged: onChanged,
+          ),
+        ),
+      ],
     );
   }
 
