@@ -46,6 +46,26 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   List<dynamic> _boneList = [];
   final poseDetector = PoseDetector(options: PoseDetectorOptions(model: PoseDetectionModel.accurate));
 
+  Map<String, v64.Vector3> _tPoseVectors = {};
+
+  Future<void> _fetchTPoseReferences() async {
+    final result = await _controller.runJavaScriptReturningResult("window.getTPoseReferences()");
+    final Map<String, dynamic> data = jsonDecode(result.toString().startsWith('"')
+        ? jsonDecode(result.toString())
+        : result.toString());
+
+    _tPoseVectors = data.map((key, value) => MapEntry(
+        key, v64.Vector3(value['x'], value['y'], value['z'])
+    ));
+
+    print("--- REFERÊNCIAS DE OSSOS DA POSE-T ---");
+    print("Total de ossos mapeados: ${_tPoseVectors.length}");
+    _tPoseVectors.forEach((boneName, vector) {
+      print("Osso: $boneName | Vetor Base: [${vector.x.toStringAsFixed(2)}, ${vector.y.toStringAsFixed(2)}, ${vector.z.toStringAsFixed(2)}]");
+    });
+    print("--------------------------------------");
+  }
+
   @override
   void initState() {
     super.initState();
@@ -62,8 +82,8 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   List<double> _getBoneRotation(PoseLandmark start, PoseLandmark end, v64.Vector3 baseDir) {
     v64.Vector3 detectedDir = v64.Vector3(
       end.x - start.x,
-      -(end.y - start.y),
-      end.z - start.z,
+      end.y - start.y,
+      -(end.z - start.z),
     ).normalized();
     v64.Quaternion q = v64.Quaternion.fromTwoVectors(baseDir, detectedDir);
     return [q.x, q.y, q.z, q.w];
@@ -95,13 +115,37 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           final p = poses.first;
           Map<String, List<double>> rots = {};
 
-          // Mapeamento usando sua hierarquia de ossos
-          rots['RightArm'] = _getBoneRotation(p.landmarks[PoseLandmarkType.rightShoulder]!, p.landmarks[PoseLandmarkType.rightElbow]!, v64.Vector3(1, 0, 0));
-          rots['RightForeArm'] = _getBoneRotation(p.landmarks[PoseLandmarkType.rightElbow]!, p.landmarks[PoseLandmarkType.rightWrist]!, v64.Vector3(1, 0, 0));
-          rots['LeftArm'] = _getBoneRotation(p.landmarks[PoseLandmarkType.leftShoulder]!, p.landmarks[PoseLandmarkType.leftElbow]!, v64.Vector3(-1, 0, 0));
-          rots['LeftForeArm'] = _getBoneRotation(p.landmarks[PoseLandmarkType.leftElbow]!, p.landmarks[PoseLandmarkType.leftWrist]!, v64.Vector3(-1, 0, 0));
-          rots['RightUpLeg'] = _getBoneRotation(p.landmarks[PoseLandmarkType.rightHip]!, p.landmarks[PoseLandmarkType.rightKnee]!, v64.Vector3(0, -1, 0));
-          rots['LeftUpLeg'] = _getBoneRotation(p.landmarks[PoseLandmarkType.leftHip]!, p.landmarks[PoseLandmarkType.leftKnee]!, v64.Vector3(0, -1, 0));
+          if (_tPoseVectors.containsKey('RightArm')) {
+            rots['RightArm'] = _getBoneRotation(
+                p.landmarks[PoseLandmarkType.rightShoulder]!,
+                p.landmarks[PoseLandmarkType.rightElbow]!,
+                _tPoseVectors['RightArm']!
+            );
+          }
+
+          if (_tPoseVectors.containsKey('RightForeArm')) {
+            rots['RightForeArm'] = _getBoneRotation(
+                p.landmarks[PoseLandmarkType.rightElbow]!,
+                p.landmarks[PoseLandmarkType.rightWrist]!,
+                _tPoseVectors['RightForeArm']!
+            );
+          }
+
+          if (_tPoseVectors.containsKey('LeftArm')) {
+            rots['LeftArm'] = _getBoneRotation(
+                p.landmarks[PoseLandmarkType.leftShoulder]!,
+                p.landmarks[PoseLandmarkType.leftElbow]!,
+                _tPoseVectors['LeftArm']!
+            );
+          }
+
+          if (_tPoseVectors.containsKey('LeftForeArm')) {
+            rots['LeftForeArm'] = _getBoneRotation(
+                p.landmarks[PoseLandmarkType.leftElbow]!,
+                p.landmarks[PoseLandmarkType.leftWrist]!,
+                _tPoseVectors['LeftForeArm']!
+            );
+          }
 
           timeline.add({"time": currentTime, "rotations": rots});
         }
@@ -184,6 +228,8 @@ class _ThreeJSViewState extends State<ThreeJSView> {
 
       final dynamic resultAnims = await _controller.runJavaScriptReturningResult("window.getAnimationList()");
       final dynamic resultStats = await _controller.runJavaScriptReturningResult("window.getModelStats()");
+
+      await _fetchTPoseReferences();
 
       setState(() {
         _isModelLoaded = true;

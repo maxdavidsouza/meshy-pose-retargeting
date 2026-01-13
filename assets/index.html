@@ -93,16 +93,20 @@
         if (!model) return JSON.stringify([]);
         const poseData = JSON.parse(poseDataJson);
         const tracks = [];
-        const boneNames = Object.keys(poseData[0].rotations);
-
-        boneNames.forEach(boneName => {
+        const allBones = [];
+        model.traverse(b => { if(b.isBone) allBones.push(b); });
+        allBones.forEach(bone => {
             const times = poseData.map(p => p.time);
             const values = [];
             poseData.forEach(p => {
-                const q = p.rotations[boneName];
-                values.push(q[0], q[1], q[2], q[3]);
+                if (p.rotations[bone.name]) {
+                    const q = p.rotations[bone.name];
+                    values.push(q[0], q[1], q[2], q[3]);
+                } else {
+                    values.push(bone.quaternion.x, bone.quaternion.y, bone.quaternion.z, bone.quaternion.w);
+                }
             });
-            tracks.push(new THREE.QuaternionKeyframeTrack(`${boneName}.quaternion`, times, values));
+            tracks.push(new THREE.QuaternionKeyframeTrack(`${bone.name}.quaternion`, times, values));
         });
 
         const clip = new THREE.AnimationClip(animationName, -1, tracks);
@@ -168,6 +172,26 @@
     window.getAnimationList = function() {
         if (!window.modelAnimations) return JSON.stringify([]);
         return JSON.stringify(window.modelAnimations.map(a => a.name));
+    };
+
+    window.getTPoseReferences = function() {
+        if (!model) return "{}";
+        const references = {};
+
+        model.traverse((bone) => {
+            if (bone.isBone && bone.children.length > 0) {
+                const child = bone.children.find(c => c.isBone);
+                if (child) {
+                    const startPos = new THREE.Vector3();
+                    const endPos = new THREE.Vector3();
+                    bone.getWorldPosition(startPos);
+                    child.getWorldPosition(endPos);
+                    const dir = new THREE.Vector3().subVectors(endPos, startPos).normalize();
+                    references[bone.name] = { x: dir.x, y: dir.y, z: dir.z };
+                }
+            }
+        });
+        return JSON.stringify(references);
     };
 
     window.playAnimation = function(name) {
