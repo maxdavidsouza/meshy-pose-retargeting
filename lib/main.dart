@@ -159,17 +159,96 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           Map<String, List<double>> rots = {};
 
           if (_tPoseVectors.containsKey('RightArm')) {
-            rots['RightArm'] = _getBoneRotation('RightArm', p.landmarks[PoseLandmarkType.rightShoulder]!, p.landmarks[PoseLandmarkType.rightElbow]!, _tPoseVectors['RightArm']!);
+            v64.Vector3 armDir = v64.Vector3(
+              p.landmarks[PoseLandmarkType.rightElbow]!.x - p.landmarks[PoseLandmarkType.rightShoulder]!.x,
+              p.landmarks[PoseLandmarkType.rightElbow]!.y - p.landmarks[PoseLandmarkType.rightShoulder]!.y,
+              -(p.landmarks[PoseLandmarkType.rightElbow]!.z - p.landmarks[PoseLandmarkType.rightShoulder]!.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('RightArm', armDir);
+
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(
+                _tPoseVectors['RightArm']!,
+                smoothedDir
+            );
+
+            double gX = 0.0;
+            double gZ = 0.0;
+            double gY = -30.0;
+
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
+            v64.Quaternion offY = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
+
+            v64.Quaternion qFinal = qBase * offX * offZ * offY;
+
+            rots['RightArm'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
           }
+
           if (_tPoseVectors.containsKey('RightForeArm')) {
-            rots['RightForeArm'] = _getBoneRotation('RightForeArm', p.landmarks[PoseLandmarkType.rightElbow]!, p.landmarks[PoseLandmarkType.rightWrist]!, _tPoseVectors['RightForeArm']!);
+            v64.Vector3 foreArmDir = v64.Vector3(
+              p.landmarks[PoseLandmarkType.rightWrist]!.x - p.landmarks[PoseLandmarkType.rightElbow]!.x,
+              p.landmarks[PoseLandmarkType.rightWrist]!.y - p.landmarks[PoseLandmarkType.rightElbow]!.y,
+              -(p.landmarks[PoseLandmarkType.rightWrist]!.z - p.landmarks[PoseLandmarkType.rightElbow]!.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('RightForeArm', foreArmDir);
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['RightForeArm']!, smoothedDir);
+
+            double gX = 0.0;
+            double gZ = 0.0;
+            double gY = -15.0;
+
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
+            v64.Quaternion offY = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
+
+            v64.Quaternion qFinal = qBase * offX * offZ * offY;
+            rots['RightForeArm'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
           }
 
           if (_tPoseVectors.containsKey('LeftArm')) {
-            rots['LeftArm'] = _getBoneRotation('LeftArm', p.landmarks[PoseLandmarkType.leftShoulder]!, p.landmarks[PoseLandmarkType.leftElbow]!, _tPoseVectors['LeftArm']!);
+            v64.Vector3 armDir = v64.Vector3(
+              p.landmarks[PoseLandmarkType.leftElbow]!.x - p.landmarks[PoseLandmarkType.leftShoulder]!.x,
+              p.landmarks[PoseLandmarkType.leftElbow]!.y - p.landmarks[PoseLandmarkType.leftShoulder]!.y,
+              -(p.landmarks[PoseLandmarkType.leftElbow]!.z - p.landmarks[PoseLandmarkType.leftShoulder]!.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('LeftArm', armDir);
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['LeftArm']!, smoothedDir);
+
+            double gX = 0.0;
+            double gZ = 0.0;
+            double gY = 30.0;
+
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
+            v64.Quaternion offY = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
+
+            v64.Quaternion qFinal = qBase * offX * offZ * offY;
+            rots['LeftArm'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
           }
+
           if (_tPoseVectors.containsKey('LeftForeArm')) {
-            rots['LeftForeArm'] = _getBoneRotation('LeftForeArm', p.landmarks[PoseLandmarkType.leftElbow]!, p.landmarks[PoseLandmarkType.leftWrist]!, _tPoseVectors['LeftForeArm']!);
+            v64.Vector3 foreArmDir = v64.Vector3(
+              p.landmarks[PoseLandmarkType.leftWrist]!.x - p.landmarks[PoseLandmarkType.leftElbow]!.x,
+              p.landmarks[PoseLandmarkType.leftWrist]!.y - p.landmarks[PoseLandmarkType.leftElbow]!.y,
+              -(p.landmarks[PoseLandmarkType.leftWrist]!.z - p.landmarks[PoseLandmarkType.leftElbow]!.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('LeftForeArm', foreArmDir);
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['LeftForeArm']!, smoothedDir);
+
+            double gX = 0.0;
+            double gZ = 0.0;
+            double gY = 15.0;
+
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
+            v64.Quaternion offY = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
+
+            v64.Quaternion qFinal = qBase * offX * offZ * offY;
+            rots['LeftForeArm'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
           }
 
           if (_tPoseVectors.containsKey('RightLeg')) {
@@ -254,6 +333,43 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             v64.Quaternion qFinal = qBase * offX * offZ * offY;
 
             rots['LeftUpLeg'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
+          }
+
+          if (_tPoseVectors.containsKey('RightShoulder')) {
+            v64.Vector3 shoulderDir = v64.Vector3(
+              p.landmarks[PoseLandmarkType.rightShoulder]!.x - shoulderCenter.x,
+              shoulderCenter.y - p.landmarks[PoseLandmarkType.rightShoulder]!.y,
+              -(p.landmarks[PoseLandmarkType.rightShoulder]!.z - shoulderCenter.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('RightShoulder', shoulderDir);
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['RightShoulder']!, smoothedDir);
+
+            double gX = 90.0;
+            double gZ = 90.0;
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
+
+            v64.Quaternion qFinal = qBase * offX * offZ;
+            rots['RightShoulder'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
+          }
+
+          if (_tPoseVectors.containsKey('LeftShoulder')) {
+            v64.Vector3 shoulderDir = v64.Vector3(
+              p.landmarks[PoseLandmarkType.leftShoulder]!.x - shoulderCenter.x,
+              shoulderCenter.y - p.landmarks[PoseLandmarkType.leftShoulder]!.y,
+              -(p.landmarks[PoseLandmarkType.leftShoulder]!.z - shoulderCenter.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('LeftShoulder', shoulderDir);
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['LeftShoulder']!, smoothedDir);
+
+            double gX = 90.0;
+            double gZ = -90.0;
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
+            v64.Quaternion qFinal = qBase * offX * offZ;
+            rots['LeftShoulder'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
           }
 
           timeline.add({"time": currentTime, "rotations": rots});
