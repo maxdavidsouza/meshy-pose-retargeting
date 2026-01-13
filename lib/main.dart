@@ -128,42 +128,132 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         final poses = await poseDetector.processImage(InputImage.fromFilePath(frame.path));
         if (poses.isNotEmpty) {
           final p = poses.first;
+          final hipCenter = PoseLandmark(
+            type: PoseLandmarkType.nose,
+            x: (p.landmarks[PoseLandmarkType.leftHip]!.x + p.landmarks[PoseLandmarkType.rightHip]!.x) / 2,
+            y: (p.landmarks[PoseLandmarkType.leftHip]!.y + p.landmarks[PoseLandmarkType.rightHip]!.y) / 2,
+            z: (p.landmarks[PoseLandmarkType.leftHip]!.z + p.landmarks[PoseLandmarkType.rightHip]!.z) / 2,
+            likelihood: (p.landmarks[PoseLandmarkType.leftHip]!.likelihood + p.landmarks[PoseLandmarkType.rightHip]!.likelihood) / 2,
+          );
+          final shoulderCenter = PoseLandmark(
+            type: PoseLandmarkType.nose,
+            x: (p.landmarks[PoseLandmarkType.leftShoulder]!.x + p.landmarks[PoseLandmarkType.rightShoulder]!.x) / 2,
+            y: (p.landmarks[PoseLandmarkType.leftShoulder]!.y + p.landmarks[PoseLandmarkType.rightShoulder]!.y) / 2,
+            z: (p.landmarks[PoseLandmarkType.leftShoulder]!.z + p.landmarks[PoseLandmarkType.rightShoulder]!.z) / 2,
+            likelihood: (p.landmarks[PoseLandmarkType.leftShoulder]!.likelihood + p.landmarks[PoseLandmarkType.rightShoulder]!.likelihood) / 2,
+          );
+          final mouthCenter = PoseLandmark(
+            type: PoseLandmarkType.nose,
+            x: (p.landmarks[PoseLandmarkType.leftMouth]!.x + p.landmarks[PoseLandmarkType.rightMouth]!.x) / 2,
+            y: (p.landmarks[PoseLandmarkType.leftMouth]!.y + p.landmarks[PoseLandmarkType.rightMouth]!.y) / 2,
+            z: (p.landmarks[PoseLandmarkType.leftMouth]!.z + p.landmarks[PoseLandmarkType.rightMouth]!.z) / 2,
+            likelihood: (p.landmarks[PoseLandmarkType.leftMouth]!.likelihood + p.landmarks[PoseLandmarkType.rightMouth]!.likelihood) / 2,
+          );
+          final eyeCenter = PoseLandmark(
+            type: PoseLandmarkType.leftEye,
+            x: (p.landmarks[PoseLandmarkType.leftEye]!.x + p.landmarks[PoseLandmarkType.rightEye]!.x) / 2,
+            y: (p.landmarks[PoseLandmarkType.leftEye]!.y + p.landmarks[PoseLandmarkType.rightEye]!.y) / 2,
+            z: (p.landmarks[PoseLandmarkType.leftEye]!.z + p.landmarks[PoseLandmarkType.rightEye]!.z) / 2,
+            likelihood: (p.landmarks[PoseLandmarkType.leftEye]!.likelihood + p.landmarks[PoseLandmarkType.rightEye]!.likelihood) / 2,
+          );
           Map<String, List<double>> rots = {};
 
           if (_tPoseVectors.containsKey('RightArm')) {
-            rots['RightArm'] = _getBoneRotation(
-                'RightArm',
-                p.landmarks[PoseLandmarkType.rightShoulder]!,
-                p.landmarks[PoseLandmarkType.rightElbow]!,
-                _tPoseVectors['RightArm']!
-            );
+            rots['RightArm'] = _getBoneRotation('RightArm', p.landmarks[PoseLandmarkType.rightShoulder]!, p.landmarks[PoseLandmarkType.rightElbow]!, _tPoseVectors['RightArm']!);
           }
-
           if (_tPoseVectors.containsKey('RightForeArm')) {
-            rots['RightForeArm'] = _getBoneRotation(
-                'RightForeArm',
-                p.landmarks[PoseLandmarkType.rightElbow]!,
-                p.landmarks[PoseLandmarkType.rightWrist]!,
-                _tPoseVectors['RightForeArm']!
-            );
+            rots['RightForeArm'] = _getBoneRotation('RightForeArm', p.landmarks[PoseLandmarkType.rightElbow]!, p.landmarks[PoseLandmarkType.rightWrist]!, _tPoseVectors['RightForeArm']!);
           }
 
           if (_tPoseVectors.containsKey('LeftArm')) {
-            rots['LeftArm'] = _getBoneRotation(
-                'LeftArm',
-                p.landmarks[PoseLandmarkType.leftShoulder]!,
-                p.landmarks[PoseLandmarkType.leftElbow]!,
-                _tPoseVectors['LeftArm']!
-            );
+            rots['LeftArm'] = _getBoneRotation('LeftArm', p.landmarks[PoseLandmarkType.leftShoulder]!, p.landmarks[PoseLandmarkType.leftElbow]!, _tPoseVectors['LeftArm']!);
+          }
+          if (_tPoseVectors.containsKey('LeftForeArm')) {
+            rots['LeftForeArm'] = _getBoneRotation('LeftForeArm', p.landmarks[PoseLandmarkType.leftElbow]!, p.landmarks[PoseLandmarkType.leftWrist]!, _tPoseVectors['LeftForeArm']!);
           }
 
-          if (_tPoseVectors.containsKey('LeftForeArm')) {
-            rots['LeftForeArm'] = _getBoneRotation(
-                'LeftForeArm',
-                p.landmarks[PoseLandmarkType.leftElbow]!,
-                p.landmarks[PoseLandmarkType.leftWrist]!,
-                _tPoseVectors['LeftForeArm']!
+          if (_tPoseVectors.containsKey('RightLeg')) {
+            v64.Vector3 legDir = v64.Vector3(
+              p.landmarks[PoseLandmarkType.rightAnkle]!.x - p.landmarks[PoseLandmarkType.rightKnee]!.x,
+              p.landmarks[PoseLandmarkType.rightKnee]!.y - p.landmarks[PoseLandmarkType.rightAnkle]!.y,
+              -(p.landmarks[PoseLandmarkType.rightAnkle]!.z - p.landmarks[PoseLandmarkType.rightKnee]!.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('RightLeg', legDir);
+            v64.Quaternion q = v64.Quaternion.fromTwoVectors(_tPoseVectors['RightLeg']!, smoothedDir);
+            rots['RightLeg'] = [q.x, q.y, q.z, q.w];
+          }
+
+          if (_tPoseVectors.containsKey('LeftLeg')) {
+            v64.Vector3 legDir = v64.Vector3(
+              p.landmarks[PoseLandmarkType.leftAnkle]!.x - p.landmarks[PoseLandmarkType.leftKnee]!.x,
+              p.landmarks[PoseLandmarkType.leftKnee]!.y - p.landmarks[PoseLandmarkType.leftAnkle]!.y,
+              -(p.landmarks[PoseLandmarkType.leftAnkle]!.z - p.landmarks[PoseLandmarkType.leftKnee]!.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('LeftLeg', legDir);
+            v64.Quaternion q = v64.Quaternion.fromTwoVectors(_tPoseVectors['LeftLeg']!, smoothedDir);
+            rots['LeftLeg'] = [q.x, q.y, q.z, q.w];
+          }
+
+          if (_tPoseVectors.containsKey('RightUpLeg')) {
+            final hip = p.landmarks[PoseLandmarkType.rightHip]!;
+            final knee = p.landmarks[PoseLandmarkType.rightKnee]!;
+
+            v64.Vector3 detectedDir = v64.Vector3(
+              knee.x - hip.x,
+              hip.y - knee.y,
+              -(knee.z - hip.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('RightUpLeg', detectedDir);
+
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(
+                _tPoseVectors['RightUpLeg']!,
+                smoothedDir
             );
+
+            double grausX = -15.0;
+            double grausZ = -60.0;
+            double grausY = -30;
+
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), grausX * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), grausZ * 0.0174533);
+            v64.Quaternion offY = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), grausY * 0.0174533);
+
+            v64.Quaternion qFinal = qBase * offX * offZ * offY;
+
+            rots['RightUpLeg'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
+          }
+
+          if (_tPoseVectors.containsKey('LeftUpLeg')) {
+            final hip = p.landmarks[PoseLandmarkType.leftHip]!;
+            final knee = p.landmarks[PoseLandmarkType.leftKnee]!;
+
+            v64.Vector3 detectedDir = v64.Vector3(
+              knee.x - hip.x,
+              hip.y - knee.y,
+              -(knee.z - hip.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('LeftUpLeg', detectedDir);
+
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(
+                _tPoseVectors['LeftUpLeg']!,
+                smoothedDir
+            );
+
+            double grausX = 0.0;
+            double grausZ = -60.0;
+            double grausY = -60.0;
+
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), grausX * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), grausZ * 0.0174533);
+            v64.Quaternion offY = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), grausY * 0.0174533);
+
+            v64.Quaternion qFinal = qBase * offX * offZ * offY;
+
+            rots['LeftUpLeg'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
           }
 
           timeline.add({"time": currentTime, "rotations": rots});
