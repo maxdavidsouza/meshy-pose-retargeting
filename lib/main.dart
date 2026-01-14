@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
@@ -33,6 +35,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   bool _isPaused = false;
   double _timeScale = 1.0;
   String _currentAnimName = "";
+  int _mocapCounter = 1;
 
   int _vertexCount = 0;
   int _faceCount = 0;
@@ -92,6 +95,66 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         onMessageReceived: (message) => _saveModel(message.message),
       )
       ..loadFlutterAsset('assets/index.html');
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkFirstSeen());
+  }
+
+  Future<void> _checkFirstSeen() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    bool _seen = (prefs.getBool('tutorial_v1') ?? false);
+
+    if (!_seen) {
+      _showWelcomeDialog(prefs);
+    }
+  }
+
+  void _showWelcomeDialog(SharedPreferences prefs) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF222222),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Column(
+            children: [
+              Icon(Icons.accessibility_new, color: Colors.blueAccent, size: 50),
+              SizedBox(height: 10),
+              Text("Bem-vindo ao Meshmerizer",
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                "Capture seus movimentos e visualize-o em modelos 3D.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              SizedBox(height: 20),
+              _TutorialItem(icon: Icons.upload_file, text: "Carregue modelos .glb customizados."),
+              _TutorialItem(icon: Icons.videocam, text: "Escolha um vídeo de movimento."),
+              _TutorialItem(icon: Icons.bolt, text: "Veja a magia da animação acontecer!"),
+            ],
+          ),
+          actions: [
+            Center(
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blueAccent,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () async {
+                  await prefs.setBool('tutorial_v1', true);
+                  Navigator.pop(context);
+                },
+                child: const Text("Começar Agora", style: TextStyle(color: Colors.white)),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _processVideoForPose() async {
@@ -273,10 +336,20 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         currentTime += 0.1;
       }
 
+      String generateNextMocapName() {
+        int i = 1;
+        while (_animations.contains("mocap_$i")) {i++;}
+        return "mocap_$i";
+      }
+      String newAnimName = generateNextMocapName();
+
       final animResult = await _controller.runJavaScriptReturningResult(
-          "window.addNewAnimationFromPose('Mocap_${DateTime.now().millisecond}', '${jsonEncode(timeline)}')"
+          "window.addNewAnimationFromPose('$newAnimName', '${jsonEncode(timeline)}')"
       );
 
+      setState(() {
+        _mocapCounter++;
+      });
       _handleAnimationListResult(animResult);
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Nova animação adicionada com sucesso!")));
@@ -342,6 +415,40 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   Future<void> _pickAndLoadModel() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles();
     if (result != null && result.files.single.path != null) {
+      final String filePath = result.files.single.path!;
+
+      if (!filePath.toLowerCase().endsWith('.glb')) {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF222222),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              title: const Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.redAccent),
+                  SizedBox(width: 10),
+                  Text("Formato Inválido", style: TextStyle(color: Colors.white)),
+                ],
+              ),
+              content: Text(
+                "O arquivo selecionado (${filePath.split('/').last}) não é um modelo 3D compatível.\n\nPor favor, escolha um arquivo com extensão .glb.",
+                style: const TextStyle(color: Colors.white70),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("OK", style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+        return;
+      }
+
       setState(() {
         _animations = [];
         _isModelLoaded = false;
@@ -450,11 +557,27 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                       itemCount: _animations.length,
                       itemBuilder: (context, i) => ListTile(
                         leading: const Icon(Icons.movie, color: Colors.purpleAccent),
-                        title: Text(_animations[i], style: const TextStyle(color: Colors.white)),
-                        trailing: IconButton(
+                        title: Text(
+                          i == 0 ? "Posição de Repouso" : _animations[i],
+                          style: TextStyle(
+                            color: i == 0 ? Colors.white70 : Colors.white,
+                            fontWeight: i == 0 ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                        trailing: i == 0
+                            ? SizedBox(
+                          width: 48,
+                          child: const Icon(
+                            Icons.lock_outline,
+                            color: Colors.white70,
+                            size: 20,
+                          ),
+                        )
+                            : IconButton(
                           icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                           onPressed: () async {
-                            final result = await _controller.runJavaScriptReturningResult("window.removeAnimation('${_animations[i]}')");
+                            final result = await _controller.runJavaScriptReturningResult(
+                                "window.removeAnimation('${_animations[i]}')");
                             _handleAnimationListResult(result);
                             setModalState(() {});
                           },
@@ -478,6 +601,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                     min: 0.0,
                     max: 2.0,
                     color: Colors.cyanAccent,
+                    infoText: "Ajusta a intensidade com que o modelo se move para frente e para trás. Como o vídeo é 2D, a IA estima a profundidade.\n\nValores baixos: Movimentos de braços e pernas ficam mais 'achatados', como se o personagem estivesse contra uma parede.\n\nValores altos: Acentua o alcance do movimento em direção à câmera, ideal para chutes frontais ou socos, mas pode causar distorções se o vídeo não estiver bem centralizado.",
                     onChanged: (v) {
                       setModalState(() => _zImpact = v);
                       setState(() => _zImpact = v);
@@ -489,6 +613,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                     min: 0.01,
                     max: 1.0,
                     color: Colors.greenAccent,
+                    infoText: "Controla o tremor dos membros. Valores altos deixam o movimento mais fluido e cinematográfico, mas podem causar um leve atraso na resposta.",
                     onChanged: (v) {
                       setModalState(() => _smoothing = v);
                       setState(() => _smoothing = v);
@@ -500,6 +625,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                     min: 0.1,
                     max: 0.95,
                     color: Colors.greenAccent,
+                    infoText: "Define o rigor da IA. Se a confiança for baixa (ex: membro escondido num chute), o osso manterá a última posição conhecida para evitar que ele 'entre' no corpo.",
                     onChanged: (v) {
                       setModalState(() => _visibilityThreshold = v);
                       setState(() => _visibilityThreshold = v);
@@ -530,29 +656,125 @@ class _ThreeJSViewState extends State<ThreeJSView> {
     );
   }
 
+  void _showSliderInfo(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF333333),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 18)),
+        content: Text(content, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Entendido", style: TextStyle(color: Colors.blueAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMeshyInfo() {
+    final Uri url = Uri.parse('https://www.meshy.ai/');
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF222222),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Icon(Icons.perm_contact_calendar_outlined, color: Colors.green),
+              SizedBox(width: 10),
+              Text("Criar um Modelo 3D", style: TextStyle(color: Colors.white)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Quer criar um avatar 3D?",
+                style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "Desculpe. Mas ainda não fornecemos essa funcionalidade.",
+                style: TextStyle(color: Colors.white),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "O que recomendamos?",
+                style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "Recomendamos que faça uso da plataforma Meshy.ai para gerar modelos 3D à partir de fotografias ou texto e exportá-los em formato .glb.\n\nLembre-se de exportá-los em posição T\n(T-Pose).",
+                style: TextStyle(color: Colors.white),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "O que fazer após criar um modelo 3D?",
+                style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "- Se o seu modelo .glb não possui esqueleto, você pode visualizá-lo por aqui.\n\n- Se o seu modelo .glb possui esqueleto, você pode animá-lo através de vídeos gravados de um humano centralizado e virado para frente para a câmera.",
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () async {
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                }
+              },
+              icon: const Icon(Icons.open_in_new, size: 18, color: Colors.green),
+              label: const Text("Acessar MeshyAI", style: TextStyle(color: Colors.green)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Entendido", style: TextStyle(color: Colors.blueAccent)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildMocapSlider({
     required String label,
     required double value,
     required double min,
     required double max,
     required Color color,
+    required String infoText,
     required ValueChanged<double> onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-        SizedBox(
-          height: 30,
-          child: Slider(
-            value: value,
-            min: min,
-            max: max,
-            activeColor: color,
-            inactiveColor: Colors.white10,
-            onChanged: onChanged,
-          ),
+        Row(
+          children: [
+            Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: () => _showSliderInfo(label.split(':')[0], infoText),
+              child: Icon(Icons.info_outline, size: 16, color: color.withAlpha(140)),
+            ),
+          ],
         ),
+        Slider(
+          value: value,
+          min: min,
+          max: max,
+          activeColor: color,
+          inactiveColor: color.withAlpha(80),
+          onChanged: onChanged,
+        ),
+        const SizedBox(height: 8),
       ],
     );
   }
@@ -566,9 +788,9 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _statsRow(Icons.interests, "Vértices: $_vertexCount"),
+          _statsRow(Icons.share, "Vértices: $_vertexCount"),
           const SizedBox(height: 4),
-          _statsRow(Icons.polyline, "Planos: $_faceCount"),
+          _statsRow(Icons.square_foot_outlined, "Planos: $_faceCount"),
         ],
       ),
     );
@@ -630,10 +852,26 @@ class _ThreeJSViewState extends State<ThreeJSView> {
     return Scaffold(
       backgroundColor: const Color(0xFF222222),
       appBar: AppBar(
-        title: const Text("Visualizador 3D"),
+        title: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.asset(
+                'assets/icon_v2.png',
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text("Visualizador 3D"),
+          ],
+        ),
         backgroundColor: Colors.black87,
         foregroundColor: Colors.white,
-        actions: [IconButton(icon: const Icon(Icons.upload_file), onPressed: _pickAndLoadModel)],
+        actions: [
+          IconButton(icon: const Icon(Icons.note_add_outlined, color: Colors.white), onPressed: _showMeshyInfo),
+          IconButton(icon: const Icon(Icons.upload_file), onPressed: _pickAndLoadModel)],
       ),
       body: Stack(
         children: [
@@ -676,11 +914,31 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           FloatingActionButton(mini: true, heroTag: "btnRig", backgroundColor: Colors.orange, onPressed: () {
             setState(() => _isRigVisible = !_isRigVisible);
             _controller.runJavaScript("window.toggleRig($_isRigVisible)");
-          }, child: const Icon(Icons.accessibility)),
+          }, child: const Icon(Icons.accessibility, color: Colors.white)),
           const SizedBox(height: 12),
-          FloatingActionButton(heroTag: "btnLight", backgroundColor: _showControls ? Colors.redAccent : Colors.blueAccent, onPressed: () => setState(() => _showControls = !_showControls), child: Icon(_showControls ? Icons.close : Icons.lightbulb)),
+          FloatingActionButton(heroTag: "btnLight", backgroundColor: _showControls ? Colors.redAccent : Colors.blueAccent, onPressed: () => setState(() => _showControls = !_showControls), child: Icon(_showControls ? Icons.close : Icons.lightbulb, color: Colors.white)),
         ],
       ) : null,
+    );
+  }
+}
+
+class _TutorialItem extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _TutorialItem({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.blueAccent, size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: const TextStyle(color: Colors.white70, fontSize: 14))),
+        ],
+      ),
     );
   }
 }
