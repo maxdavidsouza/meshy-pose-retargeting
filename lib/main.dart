@@ -50,6 +50,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   Map<String, v64.Vector3> _lastVectors = {};
   double _zImpact = 0.5;
   double _smoothing = 0.25;
+  double _visibilityThreshold = 0.75;
 
   v64.Vector3 _smoothVector(String boneName, v64.Vector3 newDir) {
     if (!_lastVectors.containsKey(boneName)) {
@@ -156,7 +157,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           );
 
           void applyRotation(String boneName, v64.Quaternion qFinal, double combinedLikelihood) {
-            if (combinedLikelihood > 0.5) {
+            if (combinedLikelihood > _visibilityThreshold) {
               rots[boneName] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
               lastValidRotations[boneName] = rots[boneName]!;
             } else if (lastValidRotations.containsKey(boneName)) {
@@ -491,6 +492,17 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                     onChanged: (v) {
                       setModalState(() => _smoothing = v);
                       setState(() => _smoothing = v);
+                    },
+                  ),
+                  _buildMocapSlider(
+                    label: "Confiança dos Membros Identificados: ${_visibilityThreshold.toStringAsFixed(2)}",
+                    value: _visibilityThreshold,
+                    min: 0.1,
+                    max: 0.95,
+                    color: Colors.greenAccent,
+                    onChanged: (v) {
+                      setModalState(() => _visibilityThreshold = v);
+                      setState(() => _visibilityThreshold = v);
                     },
                   ),
                   const SizedBox(height: 10),

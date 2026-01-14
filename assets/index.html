@@ -106,7 +106,9 @@
                     values.push(bone.quaternion.x, bone.quaternion.y, bone.quaternion.z, bone.quaternion.w);
                 }
             });
-            tracks.push(new THREE.QuaternionKeyframeTrack(`${bone.name}.quaternion`, times, values));
+            const track = new THREE.QuaternionKeyframeTrack(`${bone.name}.quaternion`, times, values);
+            track.setInterpolation(THREE.InterpolateLinear);
+            tracks.push(track);
         });
 
         const clip = new THREE.AnimationClip(animationName, -1, tracks);
