@@ -35,7 +35,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   bool _isPaused = false;
   double _timeScale = 1.0;
   String _currentAnimName = "";
-  int _mocapCounter = 1;
 
   int _vertexCount = 0;
   int _faceCount = 0;
@@ -347,9 +346,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           "window.addNewAnimationFromPose('$newAnimName', '${jsonEncode(timeline)}')"
       );
 
-      setState(() {
-        _mocapCounter++;
-      });
       _handleAnimationListResult(animResult);
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Nova animação adicionada com sucesso!")));
@@ -535,23 +531,39 @@ class _ThreeJSViewState extends State<ThreeJSView> {
   void _showAnimationMenu() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.black.withAlpha(220),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => StatefulBuilder(
           builder: (context, setModalState) {
-            return Container(
-              padding: const EdgeInsets.all(16),
+            final double screenHeight = MediaQuery.of(context).size.height;
+            final double targetHeight = screenHeight * 0.8;
+            return SizedBox(
+                height: targetHeight,
+                child: Container(
+                  padding: EdgeInsets.only(
+                      top: MediaQuery.of(context).padding.top + 16,
+                      left: 16, right: 16, bottom: 16
+                  ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text("Animações", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Lista de Animações", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                      )
+                    ],
+                  ),
                   const Divider(color: Colors.white24),
                   if (_animations.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(20),
                       child: Text("Nenhuma animação disponível", style: TextStyle(color: Colors.white54)),
                     ),
-                  Flexible(
+                  Expanded(
                     child: ListView.builder(
                       shrinkWrap: true,
                       itemCount: _animations.length,
@@ -650,6 +662,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
                   )
                 ],
               ),
+                ),
             );
           }
       ),
@@ -686,7 +699,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             children: [
               Icon(Icons.perm_contact_calendar_outlined, color: Colors.green),
               SizedBox(width: 10),
-              Text("Criar um Modelo 3D", style: TextStyle(color: Colors.white)),
+              Text("Criar Avatar", style: TextStyle(color: Colors.white)),
             ],
           ),
           content: Column(
@@ -694,22 +707,12 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                "Quer criar um avatar 3D?",
+              "Quer criar um modelo 3D?",
                 style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
               const Text(
-                "Desculpe. Mas ainda não fornecemos essa funcionalidade.",
-                style: TextStyle(color: Colors.white),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                "O que recomendamos?",
-                style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                "Recomendamos que faça uso da plataforma Meshy.ai para gerar modelos 3D à partir de fotografias ou texto e exportá-los em formato .glb.\n\nLembre-se de exportá-los em posição T\n(T-Pose).",
+                "Recomendamos que faça uso da plataforma Meshy.ai para gerar modelos 3D.Lembre-se de exportá-los em posição T\n(T-Pose).",
                 style: TextStyle(color: Colors.white),
               ),
               const SizedBox(height: 12),
@@ -719,7 +722,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
               ),
               const SizedBox(height: 12),
               const Text(
-                "- Se o seu modelo .glb não possui esqueleto, você pode visualizá-lo por aqui.\n\n- Se o seu modelo .glb possui esqueleto, você pode animá-lo através de vídeos gravados de um humano centralizado e virado para frente para a câmera.",
+                "- Se o seu modelo .glb não possui esqueleto, você pode visualizá-lo por aqui.\n\n- Se o seu modelo .glb possui esqueleto, você pode animá-lo através de vídeos gravados de um humano centralizado de frente para a câmera.",
                 style: TextStyle(color: Colors.white),
               ),
             ],
