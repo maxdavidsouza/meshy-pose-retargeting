@@ -128,6 +128,7 @@ class _ThreeJSViewState extends State<ThreeJSView> {
         final poses = await poseDetector.processImage(InputImage.fromFilePath(frame.path));
         if (poses.isNotEmpty) {
           final p = poses.first;
+          Map<String, List<double>> rots = {};
           final hipCenter = PoseLandmark(
             type: PoseLandmarkType.nose,
             x: (p.landmarks[PoseLandmarkType.leftHip]!.x + p.landmarks[PoseLandmarkType.rightHip]!.x) / 2,
@@ -156,7 +157,30 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             z: (p.landmarks[PoseLandmarkType.leftEye]!.z + p.landmarks[PoseLandmarkType.rightEye]!.z) / 2,
             likelihood: (p.landmarks[PoseLandmarkType.leftEye]!.likelihood + p.landmarks[PoseLandmarkType.rightEye]!.likelihood) / 2,
           );
-          Map<String, List<double>> rots = {};
+
+          v64.Vector3 spineDir = v64.Vector3(
+            shoulderCenter.x - hipCenter.x,
+            hipCenter.y - shoulderCenter.y,
+            -(shoulderCenter.z - hipCenter.z) * _zImpact,
+          ).normalized();
+
+          void trackSpinePart(String boneName, double gX, double gY, double gZ) {
+            if (_tPoseVectors.containsKey(boneName)) {
+              v64.Vector3 smoothed = _smoothVector(boneName, spineDir);
+              v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors[boneName]!, smoothed);
+
+              v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
+              v64.Quaternion offY = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
+              v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
+
+              v64.Quaternion qFinal = qBase * offX * offZ * offY;
+              rots[boneName] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
+            }
+          }
+
+          trackSpinePart('Spine02', 0.0, 240.0, 140.0); //cintura
+          trackSpinePart('Spine01', 0.0, 0.0, 0.0); //torso
+          trackSpinePart('Spine', 0.0, 0.0, -37.0); //clavicula
 
           if (_tPoseVectors.containsKey('RightArm')) {
             v64.Vector3 armDir = v64.Vector3(
