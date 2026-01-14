@@ -157,6 +157,13 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             z: (p.landmarks[PoseLandmarkType.leftEye]!.z + p.landmarks[PoseLandmarkType.rightEye]!.z) / 2,
             likelihood: (p.landmarks[PoseLandmarkType.leftEye]!.likelihood + p.landmarks[PoseLandmarkType.rightEye]!.likelihood) / 2,
           );
+          final neckCenter = PoseLandmark(
+            type: PoseLandmarkType.nose,
+            x: (shoulderCenter.x + mouthCenter.x) / 2,
+            y: (shoulderCenter.y + mouthCenter.y) / 2,
+            z: (shoulderCenter.z + mouthCenter.z) / 2,
+            likelihood: (shoulderCenter.likelihood + mouthCenter.likelihood) / 2,
+          );
 
           v64.Vector3 spineDir = v64.Vector3(
             shoulderCenter.x - hipCenter.x,
@@ -179,8 +186,52 @@ class _ThreeJSViewState extends State<ThreeJSView> {
           }
 
           trackSpinePart('Spine02', 0.0, 240.0, 140.0); //cintura
-          trackSpinePart('Spine01', 0.0, 0.0, 0.0); //torso
+          trackSpinePart('Spine01', -30.0, 0.0, 0.0); //torso
           trackSpinePart('Spine', 0.0, 0.0, -37.0); //clavicula
+
+          if (_tPoseVectors.containsKey('neck')) {
+            v64.Vector3 neckDir = v64.Vector3(
+              neckCenter.x - shoulderCenter.x,
+              shoulderCenter.y - neckCenter.y,
+              -(neckCenter.z - shoulderCenter.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('neck', neckDir);
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['neck']!, smoothedDir);
+
+            double gX = -60.0;
+            double gY = 0.0;
+            double gZ = 0.0;
+
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
+            v64.Quaternion offY = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
+
+            v64.Quaternion qFinal = qBase * offX * offZ * offY;
+            rots['neck'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
+          }
+
+          if (_tPoseVectors.containsKey('Head')) {
+            v64.Vector3 headDir = v64.Vector3(
+              eyeCenter.x - mouthCenter.x,
+              mouthCenter.y - eyeCenter.y,
+              -(eyeCenter.z - mouthCenter.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('Head', headDir);
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['Head']!, smoothedDir);
+
+            double gX = 0.0;
+            double gY = 0.0;
+            double gZ = 0.0;
+
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
+            v64.Quaternion offY = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
+
+            v64.Quaternion qFinal = qBase * offX * offZ * offY;
+            rots['Head'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
+          }
 
           if (_tPoseVectors.containsKey('RightArm')) {
             v64.Vector3 armDir = v64.Vector3(
