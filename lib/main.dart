@@ -171,6 +171,27 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             -(shoulderCenter.z - hipCenter.z) * _zImpact,
           ).normalized();
 
+          if (_tPoseVectors.containsKey('Hips')) {
+            v64.Vector3 hipUpDir = v64.Vector3(
+              shoulderCenter.x - hipCenter.x,
+              hipCenter.y - shoulderCenter.y,
+              -(shoulderCenter.z - hipCenter.z) * _zImpact,
+            ).normalized();
+
+            v64.Vector3 smoothedDir = _smoothVector('Hips', hipUpDir);
+            v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['Hips']!, smoothedDir);
+            double gX = 25.0;
+            double gY = -145.0;
+            double gZ = 0.0;
+
+            v64.Quaternion offX = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
+            v64.Quaternion offY = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
+            v64.Quaternion offZ = v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
+
+            v64.Quaternion qFinal = qBase * offY * offX * offZ;
+            rots['Hips'] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
+          }
+
           void trackSpinePart(String boneName, double gX, double gY, double gZ) {
             if (_tPoseVectors.containsKey(boneName)) {
               v64.Vector3 smoothed = _smoothVector(boneName, spineDir);
