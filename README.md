@@ -1,8 +1,20 @@
 # Meshmerizer - Visualizador e Animador 3D com Motion Capture
 
+<p align="center">
+<img width="248.5" height="248.5" alt="icon_v2" src="https://github.com/user-attachments/assets/4d53b27d-b57d-4850-a27a-9f773821fd98" />
+</p>
+
 ## 📋 Sobre o Projeto
 
 **Meshmerizer** é uma aplicação móvel desenvolvida em Flutter que permite aos usuários visualizar modelos 3D no formato `.glb` e animá-los através de captura de movimento (motion capture) a partir de vídeos. O projeto utiliza inteligência artificial para detectar poses humanas em vídeos e transferir esses movimentos para modelos 3D rigged, criando animações rápidas que podem ser usadas em projetos diversos.
+
+<p align="center">
+  
+![gif-use-1](https://github.com/user-attachments/assets/ca823e52-1ea2-4dde-a6da-3d3d4498818b)
+![gif-use-2](https://github.com/user-attachments/assets/57300302-0302-4e59-b8cd-e7bcc0b2e6b6)
+![gif-use-3](https://github.com/user-attachments/assets/f9077f85-be35-4910-b7e6-01613aa13448)
+
+</p>
 
 ### Objetivo Principal
 
@@ -14,7 +26,7 @@ Democratizar a criação de animações 3D, permitindo que usuários sem conheci
 
 ---
 
-## 🚀 Tecnologias Utilizadas
+## Tecnologias Utilizadas
 
 ### Frontend & Framework
 - **Flutter** (Dart 3.10.3) - Framework multiplataforma para desenvolvimento mobile
@@ -53,7 +65,7 @@ Democratizar a criação de animações 3D, permitindo que usuários sem conheci
 
 ---
 
-## 🎯 Funcionalidades Principais
+## Funcionalidades Principais
 
 ### 1. Carregamento de Modelos 3D
 - Suporte para arquivos `.glb` (GLTF Binary)
@@ -99,7 +111,7 @@ Democratizar a criação de animações 3D, permitindo que usuários sem conheci
 
 ---
 
-## 🧠 Metodologias e Conhecimentos Aplicados
+## Metodologias e Conhecimentos Aplicados
 
 ### 1. Engenharia de Software
 - **Arquitetura MVC**: Separação entre lógica de negócio (Dart) e apresentação (Three.js)
@@ -142,7 +154,7 @@ Democratizar a criação de animações 3D, permitindo que usuários sem conheci
 
 ---
 
-## 🔄 Pipeline de Motion Capture
+## Pipeline de Motion Capture
 
 ```
 1. Upload de Vídeo (.mp4)
@@ -168,7 +180,7 @@ Democratizar a criação de animações 3D, permitindo que usuários sem conheci
 
 ---
 
-## 🎨 Aspectos Técnicos Avançados
+## Aspectos Técnicos Avançados
 
 ### Mapeamento de Ossos
 O sistema calcula direções de ossos a partir de landmarks da IA:
@@ -207,7 +219,7 @@ if (combinedLikelihood > _visibilityThreshold) {
 
 ---
 
-## 🛠️ Possíveis Melhorias
+## Possíveis Melhorias
 
 ### Curto Prazo
 
@@ -267,7 +279,7 @@ if (combinedLikelihood > _visibilityThreshold) {
 
 ---
 
-## 📊 Estatísticas do Projeto
+## Estatísticas do Projeto
 
 - **Linhas de Código (Dart)**: ~850
 - **Linhas de Código (JavaScript)**: ~250
@@ -278,7 +290,7 @@ if (combinedLikelihood > _visibilityThreshold) {
 
 ---
 
-## 🎓 Aprendizados Principais
+## Aprendizados Principais
 
 1. **Integração Flutter-JavaScript**: Comunicação bidirecional eficiente
 2. **Matemática 3D Prática**: Aplicação real de quaternions e vetores
@@ -289,13 +301,13 @@ if (combinedLikelihood > _visibilityThreshold) {
 
 ---
 
-## 📝 Licença
+## Licença
 
 Este projeto é um protótipo educacional, você pode usá-lo e modificá-lo à vontade, mas não pense em vendê-lo, pois esta é uma porta de entrada para entusiastas da Computação Gráfica que não possuem recursos avançados para seus projetos, logo, a distribuição é livre, mas a venda é proibida.
 
 ---
 
-## 🙏 Agradecimentos
+## Agradecimentos
 
 - **Google ML Kit** - Pela poderosa API de detecção de poses
 - **Three.js** - Pela incrível biblioteca de renderização 3D otimizada
