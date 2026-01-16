@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +17,192 @@ void main() {
     debugShowCheckedModeBanner: false,
     home: ThreeJSView(),
   ));
+}
+
+class ModelNormalizer {
+  double modelScale = 1.0;
+  double spineLength = 0.0;
+  Map<String, double> boneLengths = {};
+  Map<String, v64.Quaternion> boneOffsets = {};
+  double hipsForwardAngle = 0.0;
+  double spineBaseAngle = 0.0;
+
+  void calculateModelScale(Map<String, dynamic> tPoseData) {
+    List<String> spineChain = ['Hips', 'Spine', 'Spine01', 'Spine02', 'neck', 'Head'];
+    double totalSpineLength = 0.0;
+
+    for (int i = 0; i < spineChain.length - 1; i++) {
+      String current = spineChain[i];
+      String next = spineChain[i + 1];
+
+      if (tPoseData.containsKey(current) && tPoseData.containsKey(next)) {
+        var currentData = tPoseData[current];
+        var nextData = tPoseData[next];
+
+        if (currentData['posX'] != null && nextData['posX'] != null) {
+          double dx = ((nextData['posX'] as num) - (currentData['posX'] as num)).toDouble();
+          double dy = ((nextData['posY'] as num) - (currentData['posY'] as num)).toDouble();
+          double dz = ((nextData['posZ'] as num) - (currentData['posZ'] as num)).toDouble();
+
+          double length = sqrt(dx * dx + dy * dy + dz * dz);
+          totalSpineLength += length;
+          boneLengths['$current-$next'] = length;
+        } else {
+          double vx = (currentData['x'] as num).toDouble();
+          double vy = (currentData['y'] as num).toDouble();
+          double vz = (currentData['z'] as num).toDouble();
+          double length = sqrt(vx * vx + vy * vy + vz * vz);
+          totalSpineLength += length;
+          boneLengths['$current-$next'] = length;
+        }
+      }
+    }
+
+    spineLength = totalSpineLength;
+    modelScale = spineLength > 0 ? 0.7 / spineLength : 1.0;
+
+    print("=== NORMALIZAÇÃO DO MODELO ===");
+    print("Comprimento da coluna: ${spineLength.toStringAsFixed(3)}");
+    print("Escala calculada: ${modelScale.toStringAsFixed(3)}");
+    print("===============================");
+  }
+
+  // Calibra offsets para qualquer modelo humano
+  void calibrateOffsets(Map<String, v64.Vector3> tPoseVectors) {
+    boneOffsets.clear();
+
+    // Analisa a orientação dos Hips
+    if (tPoseVectors.containsKey('Hips')) {
+      v64.Vector3 hipsDir = tPoseVectors['Hips']!;
+
+      // Calcula o ângulo no plano XZ (rotação em Y)
+      hipsForwardAngle = atan2(hipsDir.x, hipsDir.y) * 180 / pi;
+
+      // Detecta se o modelo está inclinado para frente/trás
+      double hipsPitch = atan2(hipsDir.z, hipsDir.y) * 180 / pi;
+
+      print("CALIBRAÇÃO AUTOMÁTICA");
+      print("Hips - Ângulo Forward: ${hipsForwardAngle.toStringAsFixed(1)}°");
+      print("Hips - Inclinação: ${hipsPitch.toStringAsFixed(1)}°");
+    }
+
+    // Analisa orientação da coluna
+    if (tPoseVectors.containsKey('Spine')) {
+      v64.Vector3 spineDir = tPoseVectors['Spine']!;
+      spineBaseAngle = atan2(spineDir.x, spineDir.y) * 180 / pi;
+      print("Spine - Ângulo Base: ${spineBaseAngle.toStringAsFixed(1)}°");
+    }
+
+    // Analisa orientação dos braços para detectar T-Pose vs A-Pose
+    String armPoseType = "T-Pose";
+    if (tPoseVectors.containsKey('LeftArm') && tPoseVectors.containsKey('RightArm')) {
+      v64.Vector3 leftArm = tPoseVectors['LeftArm']!;
+      v64.Vector3 rightArm = tPoseVectors['RightArm']!;
+
+      // Calcula ângulo dos braços (T-Pose = ~90°, A-Pose = ~45°)
+      double leftArmAngle = atan2(leftArm.y.abs(), leftArm.x.abs()) * 180 / pi;
+      double rightArmAngle = atan2(rightArm.y.abs(), rightArm.x.abs()) * 180 / pi;
+
+      if (leftArmAngle < 20 && rightArmAngle < 20) {
+        armPoseType = "T-Pose (horizontal)";
+      } else if (leftArmAngle > 45 && rightArmAngle > 45) {
+        armPoseType = "A-Pose (diagonal)";
+      }
+
+      print("Tipo de Pose: $armPoseType");
+    }
+
+    print("==========================\n");
+    _calculateAdaptiveOffsets(tPoseVectors, armPoseType);
+  }
+
+  void _calculateAdaptiveOffsets(Map<String, v64.Vector3> tPoseVectors, String armPoseType) {
+    double hipsYOffset = -145.0;
+    double hipsXOffset = 25.0;
+
+    if (hipsForwardAngle.abs() > 30) {
+      hipsYOffset = -hipsForwardAngle - 100;
+    }
+
+    boneOffsets['Hips'] =
+        v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), hipsYOffset * 0.0174533) *
+            v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), hipsXOffset * 0.0174533);
+
+    if (tPoseVectors.containsKey('Spine')) {
+      boneOffsets['Spine'] =
+          v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), -37.0 * 0.0174533);
+    }
+
+    if (tPoseVectors.containsKey('Spine01')) {
+      boneOffsets['Spine01'] =
+          v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), -30.0 * 0.0174533);
+    }
+
+    if (tPoseVectors.containsKey('Spine02')) {
+      boneOffsets['Spine02'] =
+          v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), 0.0 * 0.0174533) *
+              v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), 140.0 * 0.0174533) *
+              v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), 240.0 * 0.0174533);
+    }
+
+    if (tPoseVectors.containsKey('neck')) {
+      boneOffsets['neck'] =
+          v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), -60.0 * 0.0174533);
+    }
+
+    boneOffsets['Head'] = v64.Quaternion.identity();
+    double armYOffset = armPoseType.contains("A-Pose") ? -45.0 : -30.0;
+
+    boneOffsets['RightArm'] =
+        v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), armYOffset * 0.0174533);
+    boneOffsets['LeftArm'] =
+        v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), -armYOffset * 0.0174533);
+
+    boneOffsets['RightForeArm'] =
+        v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), -15.0 * 0.0174533);
+    boneOffsets['LeftForeArm'] =
+        v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), 15.0 * 0.0174533);
+
+    boneOffsets['RightShoulder'] =
+        v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), 90.0 * 0.0174533) *
+            v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), 90.0 * 0.0174533);
+    boneOffsets['LeftShoulder'] =
+        v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), 90.0 * 0.0174533) *
+            v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), -90.0 * 0.0174533);
+
+    double legXOffset = -15.0;
+    double legZOffset = -60.0;
+    double legYOffset = -30.0;
+
+    boneOffsets['RightUpLeg'] =
+        v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), legXOffset * 0.0174533) *
+            v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), legZOffset * 0.0174533) *
+            v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), legYOffset * 0.0174533);
+
+    boneOffsets['LeftUpLeg'] =
+        v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), 0.0 * 0.0174533) *
+            v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), legZOffset * 0.0174533) *
+            v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), -60.0 * 0.0174533);
+
+    boneOffsets['RightLeg'] = v64.Quaternion.identity();
+    boneOffsets['LeftLeg'] = v64.Quaternion.identity();
+  }
+
+  v64.Quaternion getOffset(String boneName) {
+    return boneOffsets[boneName] ?? v64.Quaternion.identity();
+  }
+
+  v64.Vector3 normalizeVector(v64.Vector3 vector) {
+    return vector.normalized();
+  }
+
+  double getBoneConfidenceFactor(String boneName) {
+    if (boneLengths.containsKey(boneName)) {
+      double length = boneLengths[boneName]!;
+      return (0.5 + (length * modelScale) * 0.5).clamp(0.5, 1.0);
+    }
+    return 1.0;
+  }
 }
 
 class ThreeJSView extends StatefulWidget {
@@ -59,28 +246,74 @@ class _ThreeJSViewState extends State<ThreeJSView> {
       _lastVectors[boneName] = newDir;
       return newDir;
     }
-    // Interpolação Linear de Movimentos (Menor = mais suave, Maior = mais abrupto).
     v64.Vector3 smoothed = _lastVectors[boneName]! + (newDir - _lastVectors[boneName]!) * _smoothing;
     _lastVectors[boneName] = smoothed.normalized();
     return _lastVectors[boneName]!;
   }
 
+  final ModelNormalizer _normalizer = ModelNormalizer();
+
   Future<void> _fetchTPoseReferences() async {
-    final result = await _controller.runJavaScriptReturningResult("window.getTPoseReferences()");
-    final Map<String, dynamic> data = jsonDecode(result.toString().startsWith('"')
-        ? jsonDecode(result.toString())
-        : result.toString());
+    final result = await _controller.runJavaScriptReturningResult(
+        "window.getTPoseReferences()");
 
-    _tPoseVectors = data.map((key, value) => MapEntry(
-        key, v64.Vector3(value['x'], value['y'], value['z'])
-    ));
+    final Map<String, dynamic> data = jsonDecode(
+        result.toString().startsWith('"')
+            ? jsonDecode(result.toString())
+            : result.toString());
 
-    print("--- REFERÊNCIAS DE OSSOS DA POSE-T ---");
-    print("Total de ossos mapeados: ${_tPoseVectors.length}");
-    _tPoseVectors.forEach((boneName, vector) {
-      print("Osso: $boneName | Vetor Base: [${vector.x.toStringAsFixed(2)}, ${vector.y.toStringAsFixed(2)}, ${vector.z.toStringAsFixed(2)}]");
+    data.remove('_metadata');
+
+    _normalizer.calculateModelScale(data);
+
+    _tPoseVectors = {};
+    data.forEach((key, value) {
+      if (value is Map && value.containsKey('x') && value.containsKey('y') && value.containsKey('z')) {
+        double x = (value['x'] as num).toDouble();
+        double y = (value['y'] as num).toDouble();
+        double z = (value['z'] as num).toDouble();
+
+        v64.Vector3 rawVector = v64.Vector3(x, y, z);
+        _tPoseVectors[key] = _normalizer.normalizeVector(rawVector);
+      }
     });
-    print("--------------------------------------");
+
+    _normalizer.calibrateOffsets(_tPoseVectors);
+
+    print("--- REFERÊNCIAS NORMALIZADAS ---");
+    print("Total de ossos: ${_tPoseVectors.length}");
+    print("Escala: ${_normalizer.modelScale.toStringAsFixed(3)}");
+    _tPoseVectors.forEach((boneName, vector) {
+      print("$boneName: [${vector.x.toStringAsFixed(2)}, "
+          "${vector.y.toStringAsFixed(2)}, ${vector.z.toStringAsFixed(2)}]");
+    });
+    print("--------------------------------");
+  }
+
+  void _applyRotationSafe(
+      Map<String, List<double>> rots,
+      Map<String, List<double>> lastValidRotations,
+      String boneName,
+      v64.Quaternion qFinal,
+      double combinedLikelihood) {
+
+    double boneFactor = _normalizer.getBoneConfidenceFactor(boneName);
+    double adjustedThreshold = _visibilityThreshold * boneFactor;
+
+    if (qFinal.x.isNaN || qFinal.y.isNaN || qFinal.z.isNaN || qFinal.w.isNaN) {
+      print("AVISO: Quaternion inválido para $boneName");
+      if (lastValidRotations.containsKey(boneName)) {
+        rots[boneName] = lastValidRotations[boneName]!;
+      }
+      return;
+    }
+
+    if (combinedLikelihood > adjustedThreshold) {
+      rots[boneName] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
+      lastValidRotations[boneName] = rots[boneName]!;
+    } else if (lastValidRotations.containsKey(boneName)) {
+      rots[boneName] = lastValidRotations[boneName]!;
+    }
   }
 
   @override
@@ -218,15 +451,6 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             likelihood: (shoulderCenter.likelihood + mouthCenter.likelihood) / 2,
           );
 
-          void applyRotation(String boneName, v64.Quaternion qFinal, double combinedLikelihood) {
-            if (combinedLikelihood > _visibilityThreshold) {
-              rots[boneName] = [qFinal.x, qFinal.y, qFinal.z, qFinal.w];
-              lastValidRotations[boneName] = rots[boneName]!;
-            } else if (lastValidRotations.containsKey(boneName)) {
-              rots[boneName] = lastValidRotations[boneName]!;
-            }
-          }
-
           if (_tPoseVectors.containsKey('Hips')) {
             v64.Vector3 hipUpDir = v64.Vector3(
               shoulderCenter.x - hipCenter.x,
@@ -236,11 +460,8 @@ class _ThreeJSViewState extends State<ThreeJSView> {
 
             v64.Vector3 smoothedDir = _smoothVector('Hips', hipUpDir);
             v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['Hips']!, smoothedDir);
-
-            v64.Quaternion off = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), -145.0 * 0.0174533) *
-                v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), 25.0 * 0.0174533);
-
-            applyRotation('Hips', qBase * off, hipCenter.likelihood);
+            v64.Quaternion off = _normalizer.getOffset('Hips');
+            _applyRotationSafe(rots, lastValidRotations, 'Hips', qBase * off, hipCenter.likelihood);
           }
 
           v64.Vector3 spineDir = v64.Vector3(
@@ -249,66 +470,82 @@ class _ThreeJSViewState extends State<ThreeJSView> {
             -(shoulderCenter.z - hipCenter.z) * _zImpact,
           ).normalized();
 
-          void trackSpinePart(String boneName, double gX, double gY, double gZ) {
+          void trackSpinePart(String boneName) {
             if (_tPoseVectors.containsKey(boneName)) {
               v64.Vector3 smoothed = _smoothVector(boneName, spineDir);
               v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors[boneName]!, smoothed);
-              v64.Quaternion off = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533) *
-                  v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533) *
-                  v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
-              applyRotation(boneName, qBase * off, hipCenter.likelihood);
+              v64.Quaternion off = _normalizer.getOffset(boneName);
+              _applyRotationSafe(rots, lastValidRotations, boneName, qBase * off, hipCenter.likelihood);
             }
           }
 
-          trackSpinePart('Spine02', 0.0, 240.0, 140.0);
-          trackSpinePart('Spine01', -30.0, 0.0, 0.0);
-          trackSpinePart('Spine', 0.0, 0.0, -37.0);
+          trackSpinePart('Spine02');
+          trackSpinePart('Spine01');
+          trackSpinePart('Spine');
 
           if (_tPoseVectors.containsKey('neck')) {
-            v64.Vector3 neckDir = v64.Vector3(neckCenter.x - shoulderCenter.x, shoulderCenter.y - neckCenter.y, -(neckCenter.z - shoulderCenter.z) * _zImpact).normalized();
+            v64.Vector3 neckDir = v64.Vector3(
+                neckCenter.x - shoulderCenter.x,
+                shoulderCenter.y - neckCenter.y,
+                -(neckCenter.z - shoulderCenter.z) * _zImpact
+            ).normalized();
+
             v64.Vector3 smoothedDir = _smoothVector('neck', neckDir);
             v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['neck']!, smoothedDir);
-            v64.Quaternion off = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), -60.0 * 0.0174533);
-            applyRotation('neck', qBase * off, neckCenter.likelihood);
+            v64.Quaternion off = _normalizer.getOffset('neck');
+            _applyRotationSafe(rots, lastValidRotations, 'neck', qBase * off, neckCenter.likelihood);
           }
 
           if (_tPoseVectors.containsKey('Head')) {
-            v64.Vector3 headDir = v64.Vector3(eyeCenter.x - mouthCenter.x, mouthCenter.y - eyeCenter.y, -(eyeCenter.z - mouthCenter.z) * _zImpact).normalized();
+            v64.Vector3 headDir = v64.Vector3(
+                eyeCenter.x - mouthCenter.x,
+                mouthCenter.y - eyeCenter.y,
+                -(eyeCenter.z - mouthCenter.z) * _zImpact
+            ).normalized();
+
             v64.Vector3 smoothedDir = _smoothVector('Head', headDir);
             v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors['Head']!, smoothedDir);
-            applyRotation('Head', qBase, eyeCenter.likelihood);
+            v64.Quaternion off = _normalizer.getOffset('Head');
+            _applyRotationSafe(rots, lastValidRotations, 'Head', qBase * off, eyeCenter.likelihood);
           }
 
-          void trackArm(String boneName, PoseLandmarkType start, PoseLandmarkType end, double gY) {
+
+          void trackArm(String boneName, PoseLandmarkType start, PoseLandmarkType end) {
             if (_tPoseVectors.containsKey(boneName)) {
               final s = p.landmarks[start]!;
               final e = p.landmarks[end]!;
               v64.Vector3 dir = v64.Vector3(e.x - s.x, e.y - s.y, -(e.z - s.z) * _zImpact).normalized();
               v64.Vector3 smoothed = _smoothVector(boneName, dir);
               v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors[boneName]!, smoothed);
-              v64.Quaternion off = v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
-              applyRotation(boneName, qBase * off, (s.likelihood + e.likelihood) / 2);
+              v64.Quaternion off = _normalizer.getOffset(boneName);
+              _applyRotationSafe(rots, lastValidRotations, boneName, qBase * off, (s.likelihood + e.likelihood) / 2);
             }
           }
 
-          trackArm('RightArm', PoseLandmarkType.rightShoulder, PoseLandmarkType.rightElbow, -30.0);
-          trackArm('RightForeArm', PoseLandmarkType.rightElbow, PoseLandmarkType.rightWrist, -15.0);
-          trackArm('LeftArm', PoseLandmarkType.leftShoulder, PoseLandmarkType.leftElbow, 30.0);
-          trackArm('LeftForeArm', PoseLandmarkType.leftElbow, PoseLandmarkType.leftWrist, 15.0);
+          trackArm('RightArm', PoseLandmarkType.rightShoulder, PoseLandmarkType.rightElbow);
+          trackArm('RightForeArm', PoseLandmarkType.rightElbow, PoseLandmarkType.rightWrist);
+          trackArm('LeftArm', PoseLandmarkType.leftShoulder, PoseLandmarkType.leftElbow);
+          trackArm('LeftForeArm', PoseLandmarkType.leftElbow, PoseLandmarkType.leftWrist);
 
-          void trackShoulder(String boneName, PoseLandmark shoulder, double gZ) {
+          void trackShoulder(String boneName, PoseLandmark shoulder) {
             if (_tPoseVectors.containsKey(boneName)) {
-              v64.Vector3 dir = v64.Vector3(shoulder.x - shoulderCenter.x, shoulderCenter.y - shoulder.y, -(shoulder.z - shoulderCenter.z) * _zImpact).normalized();
+              v64.Vector3 dir = v64.Vector3(
+                  shoulder.x - shoulderCenter.x,
+                  shoulderCenter.y - shoulder.y,
+                  -(shoulder.z - shoulderCenter.z) * _zImpact
+              ).normalized();
+
               v64.Vector3 smoothed = _smoothVector(boneName, dir);
               v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors[boneName]!, smoothed);
-              v64.Quaternion off = v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), 90.0 * 0.0174533) * v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
-              applyRotation(boneName, qBase * off, shoulder.likelihood);
+              v64.Quaternion off = _normalizer.getOffset(boneName);
+              _applyRotationSafe(rots, lastValidRotations, boneName, qBase * off, shoulder.likelihood);
             }
           }
-          trackShoulder('RightShoulder', p.landmarks[PoseLandmarkType.rightShoulder]!, 90.0);
-          trackShoulder('LeftShoulder', p.landmarks[PoseLandmarkType.leftShoulder]!, -90.0);
 
-          void trackLeg(String boneName, PoseLandmarkType start, PoseLandmarkType end, {double? gX, double? gY, double? gZ}) {
+          trackShoulder('RightShoulder', p.landmarks[PoseLandmarkType.rightShoulder]!);
+          trackShoulder('LeftShoulder', p.landmarks[PoseLandmarkType.leftShoulder]!);
+
+          void trackLeg(String boneName, PoseLandmarkType start, PoseLandmarkType end) {
             if (_tPoseVectors.containsKey(boneName)) {
               final s = p.landmarks[start]!;
               final e = p.landmarks[end]!;
@@ -316,17 +553,14 @@ class _ThreeJSViewState extends State<ThreeJSView> {
               v64.Vector3 smoothed = _smoothVector(boneName, dir);
               v64.Quaternion qBase = v64.Quaternion.fromTwoVectors(_tPoseVectors[boneName]!, smoothed);
 
-              v64.Quaternion off = v64.Quaternion.identity();
-              if (gX != null) off *= v64.Quaternion.axisAngle(v64.Vector3(1, 0, 0), gX * 0.0174533);
-              if (gZ != null) off *= v64.Quaternion.axisAngle(v64.Vector3(0, 0, 1), gZ * 0.0174533);
-              if (gY != null) off *= v64.Quaternion.axisAngle(v64.Vector3(0, 1, 0), gY * 0.0174533);
+              v64.Quaternion off = _normalizer.getOffset(boneName);
 
-              applyRotation(boneName, qBase * off, (s.likelihood + e.likelihood) / 2);
+              _applyRotationSafe(rots, lastValidRotations, boneName, qBase * off, (s.likelihood + e.likelihood) / 2);
             }
           }
 
-          trackLeg('RightUpLeg', PoseLandmarkType.rightHip, PoseLandmarkType.rightKnee, gX: -15, gZ: -60, gY: -30);
-          trackLeg('LeftUpLeg', PoseLandmarkType.leftHip, PoseLandmarkType.leftKnee, gX: 0, gZ: -60, gY: -60);
+          trackLeg('RightUpLeg', PoseLandmarkType.rightHip, PoseLandmarkType.rightKnee);
+          trackLeg('LeftUpLeg', PoseLandmarkType.leftHip, PoseLandmarkType.leftKnee);
           trackLeg('RightLeg', PoseLandmarkType.rightKnee, PoseLandmarkType.rightAnkle);
           trackLeg('LeftLeg', PoseLandmarkType.leftKnee, PoseLandmarkType.leftAnkle);
 

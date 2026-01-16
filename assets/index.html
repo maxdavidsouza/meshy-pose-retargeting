@@ -178,21 +178,55 @@
 
     window.getTPoseReferences = function() {
         if (!model) return "{}";
+
         const references = {};
+        const bonePositions = {};
+
+        model.traverse((bone) => {
+            if (bone.isBone) {
+                const worldPos = new THREE.Vector3();
+                bone.getWorldPosition(worldPos);
+                bonePositions[bone.name] = worldPos;
+            }
+        });
 
         model.traverse((bone) => {
             if (bone.isBone && bone.children.length > 0) {
                 const child = bone.children.find(c => c.isBone);
                 if (child) {
-                    const startPos = new THREE.Vector3();
-                    const endPos = new THREE.Vector3();
-                    bone.getWorldPosition(startPos);
-                    child.getWorldPosition(endPos);
-                    const dir = new THREE.Vector3().subVectors(endPos, startPos).normalize();
-                    references[bone.name] = { x: dir.x, y: dir.y, z: dir.z };
+                    const startPos = bonePositions[bone.name];
+                    const endPos = bonePositions[child.name];
+
+                    if (startPos && endPos) {
+                        const dir = new THREE.Vector3()
+                            .subVectors(endPos, startPos)
+                            .normalize();
+
+                        references[bone.name] = {
+                            x: dir.x,
+                            y: dir.y,
+                            z: dir.z,
+                            posX: startPos.x,
+                            posY: startPos.y,
+                            posZ: startPos.z,
+                            childPosX: endPos.x,
+                            childPosY: endPos.y,
+                            childPosZ: endPos.z
+                        };
+                    }
                 }
             }
         });
+
+        const bbox = new THREE.Box3().setFromObject(model);
+        const size = bbox.getSize(new THREE.Vector3());
+
+        references['_metadata'] = {
+            modelHeight: size.y,
+            modelWidth: size.x,
+            modelDepth: size.z
+        };
+
         return JSON.stringify(references);
     };
 
